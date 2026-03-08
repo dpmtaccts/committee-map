@@ -35,7 +35,7 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
         deal_size: inputs.dealSize,
         primary_contact: inputs.primaryContact,
         deal_stage: inputs.dealStage,
-        generated_results: result as unknown as Record<string, unknown>,
+        generated_results: JSON.parse(JSON.stringify(result)),
       });
       if (error) throw error;
       setEmailSent(true);
