@@ -86,7 +86,7 @@ const Index = () => {
                     : "text-muted-foreground hover:text-foreground"
                   }`}
               >
-                Drop a Call
+                Upload Meeting Transcript
               </button>
             </div>
 
