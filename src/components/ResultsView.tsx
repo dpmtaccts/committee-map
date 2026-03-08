@@ -6,7 +6,7 @@ import type { QuickMapInputs } from "@/components/QuickMapForm";
 import type { TranscriptInputs } from "@/components/TranscriptForm";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Check } from "lucide-react";
+import { Check, Share2 } from "lucide-react";
 
 export interface CommitteeResult {
   roles: Role[];
