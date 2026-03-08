@@ -6,7 +6,7 @@ import type { QuickMapInputs } from "@/components/QuickMapForm";
 import type { TranscriptInputs } from "@/components/TranscriptForm";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Check } from "lucide-react";
+import { Check, Share2 } from "lucide-react";
 
 export interface CommitteeResult {
   roles: Role[];
@@ -67,9 +67,27 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
   return (
     <div className="space-y-10">
       {/* Header */}
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <h2 className="text-[32px] font-black text-foreground mb-1 font-heading">Your Buying Committee</h2>
-        <p className="text-sm font-normal text-muted-foreground font-body">{summaryLine}</p>
+      <div className="flex items-start justify-between animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div>
+          <h2 className="text-[32px] font-black text-foreground mb-1 font-heading">Your Buying Committee</h2>
+          <p className="text-sm font-normal text-muted-foreground font-body">{summaryLine}</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-shrink-0 mt-2"
+          onClick={() => {
+            if (navigator.share) {
+              navigator.share({ title: "My Buying Committee Map", url: window.location.href });
+            } else {
+              navigator.clipboard.writeText(window.location.href);
+              toast.success("Link copied to clipboard");
+            }
+          }}
+        >
+          <Share2 className="w-4 h-4 mr-1.5" />
+          Share this
+        </Button>
       </div>
 
       {/* Role Cards */}
