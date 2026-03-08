@@ -1,0 +1,4 @@
+project_id = "mlbqwigxoxzexvnrpjww"
+
+[functions.map-committee]
+verify_jwt = false
