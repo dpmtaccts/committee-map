@@ -14,7 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      submissions: {
+        Row: {
+          company_size: string
+          created_at: string
+          deal_size: string
+          deal_stage: string
+          email: string
+          generated_results: Json
+          id: string
+          primary_contact: string
+          what_they_sell: string
+        }
+        Insert: {
+          company_size: string
+          created_at?: string
+          deal_size: string
+          deal_stage: string
+          email: string
+          generated_results: Json
+          id?: string
+          primary_contact: string
+          what_they_sell: string
+        }
+        Update: {
+          company_size?: string
+          created_at?: string
+          deal_size?: string
+          deal_stage?: string
+          email?: string
+          generated_results?: Json
+          id?: string
+          primary_contact?: string
+          what_they_sell?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
