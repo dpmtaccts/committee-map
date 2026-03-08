@@ -16,37 +16,49 @@ export type Database = {
     Tables: {
       submissions: {
         Row: {
-          company_size: string
+          buying_department: string | null
+          company_size: string | null
+          contact_level: string | null
           created_at: string
-          deal_size: string
-          deal_stage: string
+          deal_size: string | null
+          deal_stage: string | null
+          deal_summary: string | null
           email: string
-          generated_results: Json
           id: string
-          primary_contact: string
-          what_they_sell: string
+          industry: string | null
+          input_path: string
+          product_type: string | null
+          results: Json
         }
         Insert: {
-          company_size: string
+          buying_department?: string | null
+          company_size?: string | null
+          contact_level?: string | null
           created_at?: string
-          deal_size: string
-          deal_stage: string
+          deal_size?: string | null
+          deal_stage?: string | null
+          deal_summary?: string | null
           email: string
-          generated_results: Json
           id?: string
-          primary_contact: string
-          what_they_sell: string
+          industry?: string | null
+          input_path: string
+          product_type?: string | null
+          results: Json
         }
         Update: {
-          company_size?: string
+          buying_department?: string | null
+          company_size?: string | null
+          contact_level?: string | null
           created_at?: string
-          deal_size?: string
-          deal_stage?: string
+          deal_size?: string | null
+          deal_stage?: string | null
+          deal_summary?: string | null
           email?: string
-          generated_results?: Json
           id?: string
-          primary_contact?: string
-          what_they_sell?: string
+          industry?: string | null
+          input_path?: string
+          product_type?: string | null
+          results?: Json
         }
         Relationships: []
       }
