@@ -1,13 +1,34 @@
-import eraLogo from "@/assets/era-logo.png";
+"use client";
 
 const EraHeader = ({ showMapAnother, onReset }: { showMapAnother?: boolean; onReset?: () => void }) => (
-  <header className="flex items-center justify-between py-6">
-    <img src={eraLogo} alt="Era" className="h-5" />
-    {showMapAnother && (
-      <button onClick={onReset} className="text-sm font-semibold text-primary hover:underline cursor-pointer font-body">
-        Map another deal
-      </button>
-    )}
+  <header
+    className="fixed top-0 left-0 right-0 z-50"
+    style={{
+      background: "rgba(14,16,19,0.9)",
+      backdropFilter: "blur(12px)",
+      WebkitBackdropFilter: "blur(12px)",
+      borderBottom: "1px solid rgba(255,255,255,0.04)",
+    }}
+  >
+    <div className="max-w-[1100px] mx-auto flex items-center justify-between" style={{ padding: "14px 32px" }}>
+      <span className="font-heading" style={{ fontSize: 20, fontWeight: 900, color: "#FFFFFF" }}>
+        era<span style={{ color: "#2A9D8F" }}>.</span>
+      </span>
+      <div className="flex items-center gap-4">
+        {showMapAnother && (
+          <button
+            onClick={onReset}
+            className="text-sm font-semibold cursor-pointer font-body hover:underline"
+            style={{ color: "#2A9D8F" }}
+          >
+            Map another deal
+          </button>
+        )}
+        <span className="font-body" style={{ fontSize: 12, fontWeight: 400, color: "rgba(255,255,255,0.25)" }}>
+          Relationship Map
+        </span>
+      </div>
+    </div>
   </header>
 );
 

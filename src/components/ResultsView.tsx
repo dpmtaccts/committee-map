@@ -1,12 +1,13 @@
+"use client";
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import RoleCard from "@/components/RoleCard";
 import type { Role } from "@/components/RoleCard";
 import type { QuickMapInputs } from "@/components/QuickMapForm";
 import type { TranscriptInputs } from "@/components/TranscriptForm";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Check, Share2 } from "lucide-react";
+import { Check, Share2, Download } from "lucide-react";
 
 export interface CommitteeResult {
   roles: Role[];
@@ -28,6 +29,31 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
   const [email, setEmail] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [sending, setSending] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const res = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ result, inputs }),
+      });
+      if (!res.ok) throw new Error("PDF generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "relationship-map.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to generate PDF. Try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const summaryLine =
     inputs.path === "quick_map"
@@ -41,7 +67,7 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
       const insertData: Record<string, unknown> = {
         email: email.trim(),
         input_path: inputs.path,
-        results: JSON.parse(JSON.stringify(result)),
+        results: result,
       };
       if (inputs.path === "quick_map") {
         insertData.product_type = inputs.productType;
@@ -54,8 +80,12 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
       } else {
         insertData.deal_summary = result.deal_summary || null;
       }
-      const { error } = await supabase.from("submissions").insert(insertData as any);
-      if (error) throw error;
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(insertData),
+      });
+      if (!res.ok) throw new Error("Submit failed");
       setEmailSent(true);
     } catch {
       toast.error("Something went wrong. Try again.");
@@ -69,25 +99,35 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
       {/* Header */}
       <div className="flex items-start justify-between animate-in fade-in slide-in-from-bottom-2 duration-300">
         <div>
-          <h2 className="text-[32px] font-black text-foreground mb-1 font-heading">Your Buying Committee</h2>
+          <h2 className="text-[32px] font-black text-foreground mb-1 font-heading">Your Relationship Map</h2>
           <p className="text-sm font-normal text-muted-foreground font-body">{summaryLine}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-shrink-0 mt-2"
-          onClick={() => {
-            if (navigator.share) {
-              navigator.share({ title: "My Buying Committee Map", url: window.location.href });
-            } else {
-              navigator.clipboard.writeText(window.location.href);
-              toast.success("Link copied to clipboard");
-            }
-          }}
-        >
-          <Share2 className="w-4 h-4 mr-1.5" />
-          Share this
-        </Button>
+        <div className="flex items-center gap-2 flex-shrink-0 mt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDownloadPdf}
+            disabled={downloading}
+          >
+            <Download className="w-4 h-4 mr-1.5" />
+            {downloading ? "Generating..." : "PDF"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (navigator.share) {
+                navigator.share({ title: "My Relationship Map", url: window.location.href });
+              } else {
+                navigator.clipboard.writeText(window.location.href);
+                toast.success("Link copied to clipboard");
+              }
+            }}
+          >
+            <Share2 className="w-4 h-4 mr-1.5" />
+            Share
+          </Button>
+        </div>
       </div>
 
       {/* Role Cards */}
@@ -105,7 +145,7 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
 
       {/* Biggest Risk */}
       <div className="bg-secondary rounded-lg p-6 animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "400ms", animationFillMode: "both" }}>
-        <h3 className="text-lg font-bold text-destructive mb-2 font-heading">Your biggest risk right now</h3>
+        <h3 className="text-lg font-bold text-destructive mb-2 font-heading">Your biggest relationship gap</h3>
         <p className="font-light text-foreground leading-relaxed font-body">{result.biggest_risk}</p>
       </div>
 

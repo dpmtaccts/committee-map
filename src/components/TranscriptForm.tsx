@@ -1,5 +1,6 @@
+"use client";
+
 import { useState, useRef } from "react";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Upload, X, Shield } from "lucide-react";
 
@@ -47,17 +48,17 @@ const TranscriptForm = ({ onSubmit, isLoading }: TranscriptFormProps) => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
-        <h3 className="text-xl font-bold text-foreground mb-2 font-heading">Drop in a discovery call.</h3>
-        <p className="text-base font-light text-muted-foreground font-body">
-          Upload a transcript or paste your notes. We'll extract the deal context and map your committee.
+        <h3 className="text-lg font-bold font-heading" style={{ color: "#383838" }}>Drop in a discovery call.</h3>
+        <p className="text-sm font-light font-body mt-1" style={{ color: "#888" }}>
+          Upload a transcript or paste your notes. We&apos;ll extract the deal context and build your map.
         </p>
       </div>
 
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary">
-        <Shield className="w-3.5 h-3.5 text-primary" />
-        <span className="text-[13px] font-normal text-primary font-body">
+      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: "#F0F0ED" }}>
+        <Shield className="w-3.5 h-3.5" style={{ color: "#2A9D8F" }} />
+        <span className="font-body" style={{ fontSize: 13, color: "#2A9D8F" }}>
           Your transcript is processed in real-time and never stored.
         </span>
       </div>
@@ -67,7 +68,8 @@ const TranscriptForm = ({ onSubmit, isLoading }: TranscriptFormProps) => {
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className="border-2 border-dashed border-border rounded-xl p-10 text-center cursor-pointer hover:bg-secondary/50 transition-colors"
+        className="rounded-xl p-10 text-center cursor-pointer transition-colors"
+        style={{ border: "2px dashed #D7DADD", background: "#FAFAF9" }}
       >
         <input
           ref={fileInputRef}
@@ -78,49 +80,59 @@ const TranscriptForm = ({ onSubmit, isLoading }: TranscriptFormProps) => {
         />
         {file ? (
           <div className="flex items-center justify-center gap-2">
-            <span className="text-sm font-semibold text-foreground font-body">{file.name}</span>
+            <span className="text-sm font-semibold font-body" style={{ color: "#383838" }}>{file.name}</span>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setFile(null); }}
-              className="text-muted-foreground hover:text-foreground"
+              style={{ color: "#999" }}
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         ) : (
           <>
-            <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm font-semibold text-foreground font-body">Drag a file here or click to upload</p>
-            <p className="text-xs text-muted-foreground font-body mt-1">Supports Fireflies, Otter, Fathom, and Gong JSON exports</p>
+            <Upload className="w-6 h-6 mx-auto mb-3" style={{ color: "#999" }} />
+            <p className="text-sm font-semibold font-body" style={{ color: "#383838" }}>Drag a file here or click to upload</p>
+            <p className="text-xs font-body mt-1" style={{ color: "#999" }}>Supports Fireflies, Otter, Fathom, and Gong JSON exports</p>
           </>
         )}
       </div>
 
       {/* OR divider */}
       <div className="flex items-center gap-4">
-        <div className="flex-1 h-px bg-border" />
-        <span className="text-sm text-muted-foreground font-body">or</span>
-        <div className="flex-1 h-px bg-border" />
+        <div className="flex-1 h-px" style={{ background: "#E8E7E4" }} />
+        <span className="text-sm font-body" style={{ color: "#999" }}>or</span>
+        <div className="flex-1 h-px" style={{ background: "#E8E7E4" }} />
       </div>
 
       {/* Paste box */}
       <Textarea
-        rows={6}
+        rows={5}
         placeholder="Paste your meeting notes or transcript here..."
         value={pastedText}
         onChange={(e) => { setPastedText(e.target.value); if (e.target.value) setFile(null); }}
         disabled={isLoading}
-        className="border-border rounded-lg font-body text-base"
+        className="font-body text-sm"
+        style={{ border: "1px solid #D7DADD", borderRadius: 8, background: "#FFFFFF" }}
       />
 
-      <Button
-        size="xl"
+      {/* CTA */}
+      <button
         onClick={handleSubmit}
         disabled={!hasContent || isLoading}
-        className="mt-2 h-[52px]"
+        className="w-full font-body font-semibold cursor-pointer transition-all duration-150"
+        style={{
+          height: 48,
+          borderRadius: 8,
+          fontSize: 14,
+          border: "none",
+          background: hasContent && !isLoading ? "#2A9D8F" : "#E8E7E4",
+          color: hasContent && !isLoading ? "#FFFFFF" : "#BCBCBC",
+          boxShadow: hasContent && !isLoading ? "0 4px 20px rgba(42,157,143,0.3)" : "none",
+        }}
       >
-        Map this deal
-      </Button>
+        Build my map
+      </button>
     </div>
   );
 };

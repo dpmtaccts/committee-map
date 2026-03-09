@@ -1,9 +1,11 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import LoadingDots from "@/components/LoadingDots";
 
 const MESSAGES = [
   "Reading your deal...",
-  "Identifying the committee...",
+  "Mapping relationships...",
   "Finding the gaps...",
   "Building your map...",
 ];
@@ -23,7 +25,8 @@ const LoadingState = () => {
       <LoadingDots />
       <p
         key={msgIndex}
-        className="mt-6 text-base font-light text-muted-foreground font-body animate-in fade-in duration-300"
+        className="mt-6 text-base font-light font-body animate-in fade-in duration-300"
+        style={{ color: "rgba(255,255,255,0.4)" }}
       >
         {MESSAGES[msgIndex]}
       </p>

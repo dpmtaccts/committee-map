@@ -11,7 +11,9 @@ interface DealSliderProps {
 const DealSlider = ({ value, onChange, disabled }: DealSliderProps) => (
   <div className="space-y-3">
     <div className="text-center">
-      <span className="text-lg font-bold font-body text-primary">{DEAL_STOPS[value]}</span>
+      <span className="font-body" style={{ fontSize: 16, fontWeight: 700, color: "#2A9D8F" }}>
+        {DEAL_STOPS[value]}
+      </span>
     </div>
     <Slider
       value={[value]}
@@ -24,7 +26,9 @@ const DealSlider = ({ value, onChange, disabled }: DealSliderProps) => (
     />
     <div className="flex justify-between">
       {DEAL_STOPS.map((label) => (
-        <span key={label} className="text-xs text-muted-foreground font-body">{label}</span>
+        <span key={label} className="font-body" style={{ fontSize: 11, color: "#999" }}>
+          {label}
+        </span>
       ))}
     </div>
   </div>
