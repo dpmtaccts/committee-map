@@ -11,9 +11,11 @@ const EraHeader = ({ showMapAnother, onReset }: { showMapAnother?: boolean; onRe
     }}
   >
     <div className="max-w-[1100px] mx-auto flex items-center justify-between" style={{ padding: "14px 32px" }}>
-      <span className="font-heading" style={{ fontSize: 20, fontWeight: 900, color: "#FFFFFF" }}>
-        era<span style={{ color: "#2A9D8F" }}>.</span>
-      </span>
+      <img
+        src="/era-logo.png"
+        alt="Era"
+        style={{ height: 22, filter: "brightness(0) invert(1)" }}
+      />
       <div className="flex items-center gap-4">
         {showMapAnother && (
           <button

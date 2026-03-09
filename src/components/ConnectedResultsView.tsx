@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, Share2, Download, ChevronDown, ExternalLink, Building2 } from "lucide-react";
+import { Check, Share2, Download, ChevronDown, ExternalLink, Building2, Globe } from "lucide-react";
 import type { DealInputs } from "@/components/ResultsView";
 
 interface WayIn {
@@ -29,16 +29,19 @@ interface EnrichedRole {
 interface CompanyInfo {
   name: string;
   domain: string;
+  logoUrl: string | null;
   employeeCount: number | null;
   revenue: string | null;
   industry: string | null;
   techStack: string[];
   recentFunding: string | null;
   hqLocation: string | null;
+  description: string | null;
 }
 
 export interface EnrichedResult {
   enrichment_available: boolean;
+  suggested_contacts?: boolean;
   company: CompanyInfo;
   roles: EnrichedRole[];
   deal_risk_score: number;
@@ -164,13 +167,19 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    style={{ color: "#2A9D8F" }}
+                    className="flex items-center gap-1 hover:underline"
+                    style={{ color: "#2A9D8F", fontSize: 13 }}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
+                    <span className="font-body">LinkedIn</span>
                   </a>
                 )}
               </div>
-            ) : null}
+            ) : (
+              <p className="font-body mt-1" style={{ fontSize: 15, fontWeight: 600, color: "#BCBCBC", fontStyle: "italic" }}>
+                Unidentified
+              </p>
+            )}
             <p className="font-body" style={{ fontSize: 14, color: "#888", marginTop: 2 }}>
               {role.title || role.likely_title}
             </p>
@@ -344,16 +353,36 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
             <div
-              className="flex items-center justify-center rounded-lg flex-shrink-0"
+              className="flex items-center justify-center rounded-lg flex-shrink-0 overflow-hidden"
               style={{ width: 48, height: 48, background: "#F0EFED" }}
             >
-              <Building2 className="w-5 h-5" style={{ color: "#999" }} />
+              {company.logoUrl ? (
+                <img
+                  src={company.logoUrl}
+                  alt={company.name}
+                  width={48}
+                  height={48}
+                  className="object-contain"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                    e.currentTarget.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>';
+                  }}
+                />
+              ) : (
+                <Building2 className="w-5 h-5" style={{ color: "#999" }} />
+              )}
             </div>
             <div>
               <h2 className="font-heading" style={{ fontSize: 22, fontWeight: 900, color: "#383838" }}>
                 {company.name}
               </h2>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
+                {company.domain && (
+                  <span className="font-body flex items-center gap-1" style={{ fontSize: 13, color: "#2A9D8F" }}>
+                    <Globe className="w-3 h-3" />
+                    {company.domain}
+                  </span>
+                )}
                 {company.industry && (
                   <span className="font-body" style={{ fontSize: 13, color: "#888" }}>
                     {company.industry}
@@ -361,7 +390,12 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
                 )}
                 {company.employeeCount && (
                   <span className="font-body" style={{ fontSize: 13, color: "#888" }}>
-                    {company.employeeCount.toLocaleString()} employees
+                    ~{company.employeeCount.toLocaleString()} employees
+                  </span>
+                )}
+                {company.revenue && (
+                  <span className="font-body" style={{ fontSize: 13, color: "#888" }}>
+                    {company.revenue} revenue
                   </span>
                 )}
                 {company.hqLocation && (
@@ -380,8 +414,15 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
           </div>
         </div>
 
+        {/* Company description */}
+        {company.description && (
+          <p className="font-body mt-3" style={{ fontSize: 14, fontWeight: 300, color: "#666", lineHeight: 1.5 }}>
+            {company.description}
+          </p>
+        )}
+
         {/* Summary line */}
-        <p className="font-body mt-3" style={{ fontSize: 13, color: "#999" }}>
+        <p className="font-body mt-2" style={{ fontSize: 13, color: "#999" }}>
           {summaryLine}
         </p>
 
@@ -427,6 +468,16 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
       )}
 
       {/* Role Cards */}
+      {result.suggested_contacts && (
+        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "120ms", animationFillMode: "both" }}>
+          <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#C4713B" }}>
+            Suggested contacts
+          </span>
+          <span className="font-body" style={{ fontSize: 12, color: "#999" }}>
+            — based on company size &amp; structure. Verify on LinkedIn.
+          </span>
+        </div>
+      )}
       <div className="space-y-3">
         {result.roles.map((role, i) => (
           <div

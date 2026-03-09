@@ -38,8 +38,8 @@ const STATS = [
   },
 ];
 
-const ENRICH_MESSAGES = [
-  "Finding real people...",
+const ENRICH_MESSAGES_TEMPLATE = [
+  "Finding people at {domain}...",
   "Mapping your connections...",
   "Building your ways in...",
 ];
@@ -52,22 +52,33 @@ export default function Home() {
   const [enrichedResult, setEnrichedResult] = useState<EnrichedResult | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichMsgIndex, setEnrichMsgIndex] = useState(0);
-  // heroVisible removed — fade-in now handled by CSS @keyframes (hero-animations.css)
+  const [enrichDomain, setEnrichDomain] = useState("");
 
   // Cycle enrichment loading messages
   useEffect(() => {
     if (!isEnriching) return;
     const interval = setInterval(() => {
-      setEnrichMsgIndex((prev) => (prev + 1) % ENRICH_MESSAGES.length);
+      setEnrichMsgIndex((prev) => (prev + 1) % ENRICH_MESSAGES_TEMPLATE.length);
     }, 2500);
     return () => clearInterval(interval);
   }, [isEnriching]);
 
   const handleSubmit = async (dealInputs: DealInputs) => {
+    // Check if Quick Map with a company domain
+    const quickInputs = dealInputs.path === "quick_map" ? dealInputs as QuickMapInputs : null;
+    const companyDomain = quickInputs?.companyDomain;
+    const email = quickInputs?.email;
+
     setIsLoading(true);
     setInputs(dealInputs);
     setEnrichedResult(null);
+
+    if (companyDomain) {
+      setEnrichDomain(companyDomain);
+    }
+
     try {
+      // Step 1: Generate generic committee map
       const res = await fetch("/api/map-committee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,18 +86,50 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
-      setResult(data as CommitteeResult);
+      const committeeResult = data as CommitteeResult;
+      setResult(committeeResult);
+
+      // Step 2: If company domain provided, enrich immediately
+      if (companyDomain) {
+        setIsLoading(false);
+        setIsEnriching(true);
+        setEnrichMsgIndex(0);
+
+        const enrichRes = await fetch("/api/enrich-committee", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            companyDomain,
+            email,
+            dealInputs,
+            committeeResult,
+          }),
+        });
+        const enrichData = await enrichRes.json();
+
+        if (enrichRes.status === 429) {
+          toast.error(enrichData.error || "Too many requests. Try again in a moment.");
+        } else if (enrichData.enrichment_available === false) {
+          toast.error(enrichData.error || "Could not enrich this domain. Showing generic map.");
+        } else {
+          setEnrichedResult(enrichData as EnrichedResult);
+        }
+      }
+
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       console.error(e);
       toast.error("Something went wrong. Try again.");
     } finally {
       setIsLoading(false);
+      setIsEnriching(false);
     }
   };
 
-  const handleEnrich = async (companyDomain: string) => {
+  // Enrich from results page (second-chance flow)
+  const handleEnrich = async (companyDomain: string, email?: string) => {
     if (!result || !inputs) return;
+    setEnrichDomain(companyDomain);
     setIsEnriching(true);
     setEnrichMsgIndex(0);
     try {
@@ -95,13 +138,18 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyDomain,
+          email,
           dealInputs: inputs,
           committeeResult: result,
         }),
       });
       const data = await res.json();
+      if (res.status === 429) {
+        toast.error(data.error || "Too many requests. Try again in a moment.");
+        return;
+      }
       if (data.enrichment_available === false) {
-        toast.error("Enrichment unavailable right now. Showing your original map.");
+        toast.error(data.error || "No contacts found at this domain. Showing suggested roles.");
         return;
       }
       setEnrichedResult(data as EnrichedResult);
@@ -135,10 +183,12 @@ export default function Home() {
           <footer className="mt-16 text-center" style={{ borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 32 }}>
             <span className="font-body" style={{ fontSize: 13, color: "rgba(0,0,0,0.3)" }}>
               Built by{" "}
-              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">
-                Era
-              </a>
+              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">Era</a>
             </span>
+            <br />
+            <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" className="font-body hover:underline" style={{ fontSize: 12, color: "#2A9D8F" }}>eracx.com</a>
+            <span className="font-body" style={{ margin: "0 6px", fontSize: 11, color: "rgba(0,0,0,0.2)" }}>&middot;</span>
+            <span className="font-body" style={{ fontSize: 11, color: "rgba(0,0,0,0.2)" }}>All data sourced from public business information.</span>
           </footer>
         </div>
       </div>
@@ -172,7 +222,7 @@ export default function Home() {
                   className="font-body animate-in fade-in duration-300"
                   style={{ fontSize: 15, fontWeight: 300, color: "#666" }}
                 >
-                  {ENRICH_MESSAGES[enrichMsgIndex]}
+                  {ENRICH_MESSAGES_TEMPLATE[enrichMsgIndex].replace("{domain}", enrichDomain)}
                 </p>
               </div>
             )}
@@ -180,23 +230,42 @@ export default function Home() {
           <footer className="mt-16 text-center" style={{ borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 32 }}>
             <span className="font-body" style={{ fontSize: 13, color: "rgba(0,0,0,0.3)" }}>
               Built by{" "}
-              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">
-                Era
-              </a>
+              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">Era</a>
             </span>
+            <br />
+            <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" className="font-body hover:underline" style={{ fontSize: 12, color: "#2A9D8F" }}>eracx.com</a>
+            <span className="font-body" style={{ margin: "0 6px", fontSize: 11, color: "rgba(0,0,0,0.2)" }}>&middot;</span>
+            <span className="font-body" style={{ fontSize: 11, color: "rgba(0,0,0,0.2)" }}>All data sourced from public business information.</span>
           </footer>
         </div>
       </div>
     );
   }
 
-  // Loading state on dark background
-  if (isLoading) {
+  // Loading / enriching state on dark background
+  if (isLoading || isEnriching) {
     return (
       <div className="min-h-screen" style={{ background: "#0E1013" }}>
         <EraHeader />
         <div className="pt-[72px]">
-          <LoadingState />
+          {isEnriching ? (
+            <div className="max-w-md mx-auto pt-32 text-center">
+              <div className="inline-flex items-center gap-1 mb-6">
+                <span className="h-2.5 w-2.5 rounded-full animate-pulse-dot" style={{ background: "#2A9D8F" }} />
+                <span className="h-2.5 w-2.5 rounded-full animate-pulse-dot [animation-delay:0.2s]" style={{ background: "#2A9D8F" }} />
+                <span className="h-2.5 w-2.5 rounded-full animate-pulse-dot [animation-delay:0.4s]" style={{ background: "#2A9D8F" }} />
+              </div>
+              <p
+                key={enrichMsgIndex}
+                className="font-body animate-in fade-in duration-300"
+                style={{ fontSize: 17, fontWeight: 300, color: "rgba(255,255,255,0.6)" }}
+              >
+                {ENRICH_MESSAGES_TEMPLATE[enrichMsgIndex].replace("{domain}", enrichDomain)}
+              </p>
+            </div>
+          ) : (
+            <LoadingState />
+          )}
         </div>
       </div>
     );
@@ -212,11 +281,11 @@ export default function Home() {
         className="max-w-[1100px] mx-auto px-4 md:px-8 pt-[72px]"
         style={{ position: "relative", zIndex: 1 }}
       >
-        <div className="flex flex-col lg:flex-row gap-10 lg:gap-16 py-12 lg:py-20 items-start">
+        <div className="flex flex-col lg:flex-row py-12 lg:py-20 items-start" style={{ gap: 56 }}>
           {/* LEFT COLUMN — sticky on desktop */}
           <div
-            className="lg:sticky lg:top-[72px] flex-shrink-0"
-            style={{ flex: "1 1 380px", minWidth: 300 }}
+            className="lg:sticky flex-shrink-0"
+            style={{ flex: "1 1 380px", minWidth: 300, top: 80 }}
           >
             <div className="hero-fade-in">
 
@@ -266,14 +335,14 @@ export default function Home() {
             </div>
           </div>
 
-          {/* RIGHT COLUMN — white form card */}
+          {/* RIGHT COLUMN — scrolls naturally */}
           <div className="w-full" style={{ flex: "0 0 auto", maxWidth: 480, minWidth: 360 }}>
             <div
               className="hero-card-fade-in"
               style={{
                 background: "#FFFFFF",
                 borderRadius: 16,
-                padding: "28px 28px 24px",
+                padding: 28,
                 boxShadow: "0 8px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04)",
               }}
             >
@@ -337,13 +406,19 @@ export default function Home() {
         <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">
           Era
         </a>
+        <br />
+        <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F", fontSize: 12 }} className="hover:underline">
+          eracx.com
+        </a>
+        <span style={{ margin: "0 6px" }}>&middot;</span>
+        <span style={{ fontSize: 11 }}>All data sourced from public business information.</span>
       </footer>
     </div>
   );
 }
 
-// Enrichment prompt component
-function EnrichmentPrompt({ onEnrich }: { onEnrich: (domain: string) => void }) {
+// Enrichment prompt component (shown on results page as second chance)
+function EnrichmentPrompt({ onEnrich }: { onEnrich: (domain: string, email: string) => void }) {
   const [domain, setDomain] = useState("");
   const [enrichEmail, setEnrichEmail] = useState("");
 
@@ -384,7 +459,7 @@ function EnrichmentPrompt({ onEnrich }: { onEnrich: (domain: string) => void }) 
           style={{ border: "1px solid #D7DADD", color: "#383838", background: "#FFFFFF" }}
         />
         <button
-          onClick={() => canSubmit && onEnrich(domain.trim())}
+          onClick={() => canSubmit && onEnrich(domain.trim(), enrichEmail.trim())}
           disabled={!canSubmit}
           className="w-full font-body font-semibold cursor-pointer transition-all duration-150"
           style={{

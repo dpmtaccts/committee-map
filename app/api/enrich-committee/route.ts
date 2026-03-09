@@ -6,7 +6,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Rate limit: max 10 enrichment requests per email per day
 async function checkRateLimit(email: string): Promise<boolean> {
-  if (!email || !process.env.DATABASE_URL) return true; // skip if no DB
+  if (!email || !process.env.DATABASE_URL) return true;
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
     const res = await pool.query(
@@ -15,7 +15,7 @@ async function checkRateLimit(email: string): Promise<boolean> {
     );
     return parseInt(res.rows[0].count) < 10;
   } catch {
-    return true; // allow on DB error
+    return true;
   } finally {
     await pool.end();
   }
@@ -29,218 +29,157 @@ interface Role {
   status: "covered" | "gap" | "risk";
 }
 
-interface CompanyData {
+interface ApolloOrg {
   name: string;
-  domain: string;
-  employeeCount: number | null;
-  revenue: string | null;
+  logo_url: string | null;
+  website_url: string | null;
+  estimated_num_employees: number | null;
   industry: string | null;
-  techStack: string[];
-  recentFunding: string | null;
-  hqLocation: string | null;
+  short_description: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  organization_revenue_printed: string | null;
+  keywords: string[] | null;
 }
 
-interface EnrichedContact {
-  fullName: string;
-  title: string;
-  linkedinUrl: string | null;
-  email: string | null;
-}
+// ─── Step 1: Enrich company from Apollo ───
 
-// STEP 1: Company enrichment via Databar
-async function enrichCompany(domain: string): Promise<CompanyData | null> {
-  const apiKey = process.env.DATABAR_API_KEY;
+async function enrichCompanyFromApollo(
+  domain: string
+): Promise<{ org: ApolloOrg | null; error?: string }> {
+  const apiKey = process.env.APOLLO_API_KEY;
   if (!apiKey) {
-    console.warn("DATABAR_API_KEY not set, skipping company enrichment");
-    return null;
+    return { org: null, error: "APOLLO_API_KEY not configured" };
   }
 
   try {
-    const res = await fetch("https://api.databar.ai/api/v1/search", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        source: "company_enrichment",
-        query: { domain },
-      }),
-    });
+    const res = await fetch(
+      `https://api.apollo.io/api/v1/organizations/enrich?domain=${encodeURIComponent(domain)}`,
+      {
+        method: "GET",
+        headers: {
+          "Cache-Control": "no-cache",
+          "X-Api-Key": apiKey,
+        },
+      }
+    );
 
+    if (res.status === 429) return { org: null, error: "rate_limit" };
+    if (res.status === 401) {
+      console.error("Apollo auth error");
+      return { org: null, error: "auth_error" };
+    }
     if (!res.ok) {
-      console.error("Databar API error:", res.status, await res.text());
-      return null;
+      console.error(`Apollo error: ${res.status}`);
+      return { org: null, error: `Apollo returned ${res.status}` };
     }
 
     const data = await res.json();
-    const company = data?.results?.[0] || data?.data?.[0] || data;
-
-    return {
-      name: company.name || company.company_name || domain.split(".")[0],
-      domain,
-      employeeCount: company.employee_count || company.employees || null,
-      revenue: company.revenue || company.estimated_revenue || null,
-      industry: company.industry || company.sector || null,
-      techStack: company.tech_stack || company.technologies || [],
-      recentFunding: company.last_funding_round || company.recent_funding || null,
-      hqLocation: company.hq_location || company.headquarters || company.location || null,
-    };
+    const org = data.organization as ApolloOrg | null;
+    if (org) {
+      console.log(`Apollo org enrichment: ${org.name} — ${org.industry} — ${org.estimated_num_employees} employees`);
+    }
+    return { org };
   } catch (e) {
-    console.error("Databar enrichment failed:", e);
-    return null;
+    console.error("Apollo enrichment failed:", e);
+    return { org: null, error: "network_error" };
   }
 }
 
-// STEP 2: Contact enrichment via Clay
-async function enrichContacts(
-  domain: string,
-  roles: Role[]
-): Promise<Map<string, EnrichedContact>> {
-  const apiKey = process.env.CLAY_API_KEY;
-  const contactMap = new Map<string, EnrichedContact>();
+// ─── Step 2: Generate suggested contacts via Claude ───
 
-  if (!apiKey) {
-    console.warn("CLAY_API_KEY not set, skipping contact enrichment");
-    return contactMap;
-  }
-
-  try {
-    const res = await fetch("https://api.clay.com/v3/find-and-enrich-contacts-at-company", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        company_domain: domain,
-        titles: roles.map((r) => r.likely_title),
-        limit: roles.length * 2,
-      }),
-    });
-
-    if (!res.ok) {
-      console.error("Clay API error:", res.status, await res.text());
-      return contactMap;
-    }
-
-    const data = await res.json();
-    const contacts: any[] = data?.contacts || data?.results || data?.people || [];
-
-    // Match each contact to the closest role by title similarity
-    for (const contact of contacts) {
-      const contactTitle = (contact.title || contact.job_title || "").toLowerCase();
-      const contactName = contact.full_name || contact.name || `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
-
-      if (!contactName) continue;
-
-      let bestRole: string | null = null;
-      let bestScore = 0;
-
-      for (const role of roles) {
-        if (contactMap.has(role.role)) continue; // already matched
-        const roleTitle = role.likely_title.toLowerCase();
-        const words = roleTitle.split(/\s+/);
-        const matchCount = words.filter((w) => contactTitle.includes(w)).length;
-        const score = matchCount / words.length;
-        if (score > bestScore) {
-          bestScore = score;
-          bestRole = role.role;
-        }
-      }
-
-      if (bestRole && bestScore > 0.3) {
-        contactMap.set(bestRole, {
-          fullName: contactName,
-          title: contact.title || contact.job_title || "",
-          linkedinUrl: contact.linkedin_url || contact.linkedin || null,
-          email: contact.email || contact.work_email || null,
-        });
-      }
-    }
-
-    return contactMap;
-  } catch (e) {
-    console.error("Clay enrichment failed:", e);
-    return contactMap;
-  }
-}
-
-// STEP 3: Generate "Ways In" via Claude
-async function generateWaysIn(
-  roles: any[],
-  company: CompanyData | null,
-  dealInputs: any,
-  committeeResult: any
+async function generateSuggestedContacts(
+  org: ApolloOrg | null,
+  committeeResult: { roles: Role[]; biggest_risk: string; next_moves: string[]; pattern: string },
+  dealInputs: Record<string, unknown>,
+  domain: string
 ) {
-  const companyContext = company
-    ? `Company: ${company.name} (${company.domain})
-Employee count: ${company.employeeCount || "unknown"}
-Revenue: ${company.revenue || "unknown"}
-Industry: ${company.industry || "unknown"}
-Tech stack: ${company.techStack?.join(", ") || "unknown"}
-Recent funding: ${company.recentFunding || "none detected"}
-HQ: ${company.hqLocation || "unknown"}`
-    : `Company domain: ${dealInputs.companyDomain || "unknown"}`;
-
-  const rolesContext = roles
+  const rolesContext = committeeResult.roles
     .map(
-      (r: any) =>
-        `- ${r.role}: ${r.name || "Unknown"} (${r.title || r.likely_title}), status: ${r.status}`
+      (r) =>
+        `- ${r.role} (likely title: ${r.likely_title}): cares about ${r.what_they_care_about} | evaluates by: ${r.how_they_evaluate} | status: ${r.status}`
     )
     .join("\n");
 
-  const systemPrompt = `You are an expert B2B sales strategist. Given this buying committee with real people and company context, generate specific "ways in" for each contact. Focus on: mutual connection opportunities (based on their background/company), recent public signals (job changes, posts, conference appearances, company news), content angles that would resonate with their role and stated concerns, and trigger events that create urgency. Be specific and actionable. No generic advice. Respond ONLY with valid JSON. No markdown backticks. No preamble.`;
-
-  const prompt = `Given this deal context and relationship map, generate ways in and a risk assessment.
-
-${companyContext}
-
-Deal context:
-${JSON.stringify(dealInputs, null, 2)}
-
-Relationship map:
-${rolesContext}
-
-Original analysis:
-- Biggest risk: ${committeeResult.biggest_risk}
-- Pattern: ${committeeResult.pattern}
-
-Return this exact JSON structure:
-{
-  "roles_ways_in": {
-    "<role name>": [
-      { "type": "mutual|signal|content|event", "icon": "<single emoji>", "text": "<specific actionable text>" }
-    ]
-  },
-  "deal_risk_score": <0-100 number based on: committee coverage gaps, seniority gaps, deal stage risk, number of paths into uncovered roles. Lower = less risk>,
-  "competitive_signals": ["<any competitive signals from company data>"] or null,
-  "biggest_risk": "<regenerated risk paragraph using real names where available>",
-  "next_moves": ["<specific move 1 using real names/ways in>", "<move 2>", "<move 3>"],
-  "pattern": "<regenerated pattern insight>"
-}
-
-For each role, generate 2-3 ways_in entries. Use these type mappings:
-- "mutual": mutual connections, shared networks, alumni
-- "signal": job changes, LinkedIn posts, conference appearances
-- "content": content angles, case studies, thought leadership
-- "event": trigger events, company changes, market shifts
-
-Make the deal_risk_score reflect: how many roles are covered vs gap/risk, whether Economic Buyer is covered, seniority of current contact vs needed, and deal stage urgency.`;
+  const companyContext = org
+    ? `Company: ${org.name} (${domain})
+Industry: ${org.industry || "unknown"}
+Employees: ${org.estimated_num_employees || "unknown"}
+Revenue: ${org.organization_revenue_printed || "unknown"}
+HQ: ${[org.city, org.state, org.country].filter(Boolean).join(", ") || "unknown"}
+Description: ${org.short_description || "none"}
+Keywords: ${org.keywords?.slice(0, 15).join(", ") || "none"}`
+    : `Company domain: ${domain}`;
 
   const message = await anthropic.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 3000,
-    system: systemPrompt,
-    messages: [{ role: "user", content: prompt }],
+    system: `You are an expert B2B sales strategist. Given real company data, you suggest the most likely people who fill buying committee roles at this specific company. Use realistic names and titles that fit this company's size, industry, and structure. Generate LinkedIn URLs in the format linkedin.com/in/firstname-lastname. Respond ONLY with valid JSON. No markdown backticks. No preamble.`,
+    messages: [
+      {
+        role: "user",
+        content: `Generate a relationship map with suggested contacts for this company.
+
+REAL COMPANY DATA:
+${companyContext}
+
+BUYING COMMITTEE ROLES NEEDED:
+${rolesContext}
+
+DEAL CONTEXT:
+${JSON.stringify(dealInputs, null, 2)}
+
+ORIGINAL ANALYSIS:
+- Biggest risk: ${committeeResult.biggest_risk}
+- Pattern: ${committeeResult.pattern}
+
+INSTRUCTIONS:
+1. For each buying committee role, suggest a plausible person who would hold that role at this specific company based on its size, industry, and structure.
+2. Generate realistic names and titles. Use LinkedIn URL format: https://linkedin.com/in/firstname-lastname
+3. Set status to "gap" for all roles (these are suggested, not confirmed contacts).
+4. Generate 2-3 specific "ways in" for each role using the real company context.
+5. Calculate a deal_risk_score (0-100).
+
+Return this exact JSON:
+{
+  "matched_roles": [
+    {
+      "role": "<role name>",
+      "name": "<suggested person name>",
+      "title": "<suggested title for this company>",
+      "linkedinUrl": "https://linkedin.com/in/firstname-lastname",
+      "email": null,
+      "status": "gap",
+      "what_they_care_about": "<from original role>",
+      "how_they_evaluate": "<from original role>",
+      "warmth": 0,
+      "waysIn": [
+        { "type": "mutual|signal|content|event", "icon": "<single emoji>", "text": "<specific actionable text using company context>" }
+      ]
+    }
+  ],
+  "deal_risk_score": <0-100>,
+  "competitive_signals": ["<signals based on company data>"] or null,
+  "biggest_risk": "<risk assessment using company context>",
+  "next_moves": ["<specific action 1>", "<action 2>", "<action 3>"],
+  "pattern": "<pattern insight>"
+}`,
+      },
+    ],
   });
 
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected response type");
 
-  const cleaned = content.text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  const cleaned = content.text
+    .replace(/```json\n?/g, "")
+    .replace(/```\n?/g, "")
+    .trim();
   return JSON.parse(cleaned);
 }
+
+// ─── POST handler ───
 
 export async function POST(req: NextRequest) {
   try {
@@ -248,7 +187,10 @@ export async function POST(req: NextRequest) {
     const { companyDomain, dealInputs, committeeResult, email } = body;
 
     if (!companyDomain || !committeeResult?.roles) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
     // Rate limiting
@@ -262,102 +204,63 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const domain = companyDomain.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+    const domain = companyDomain
+      .replace(/^https?:\/\//, "")
+      .replace(/\/.*$/, "")
+      .toLowerCase();
 
-    // Run company and contact enrichment in parallel
-    const [company, contactMap] = await Promise.all([
-      enrichCompany(domain),
-      enrichContacts(domain, committeeResult.roles),
-    ]);
+    // Step 1: Get real company data from Apollo
+    const { org, error: apolloError } = await enrichCompanyFromApollo(domain);
 
-    // Build enriched roles
-    const enrichedRoles = committeeResult.roles.map((role: Role) => {
-      const contact = contactMap.get(role.role);
-      return {
-        ...role,
-        name: contact?.fullName || null,
-        title: contact?.title || role.likely_title,
-        linkedinUrl: contact?.linkedinUrl || null,
-        email: contact?.email || null,
-        warmth: contact ? estimateWarmth(role.status, !!contact.linkedinUrl) : 0,
-        waysIn: [],
-      };
-    });
-
-    // Generate ways in via Claude
-    try {
-      const waysInResult = await generateWaysIn(
-        enrichedRoles,
-        company,
-        dealInputs,
-        committeeResult
+    if (apolloError === "rate_limit") {
+      return NextResponse.json(
+        { error: "Too many requests. Try again in a moment." },
+        { status: 429 }
       );
-
-      // Merge ways_in into roles
-      for (const role of enrichedRoles) {
-        const roleWaysIn = waysInResult.roles_ways_in?.[role.role];
-        if (roleWaysIn) {
-          role.waysIn = roleWaysIn;
-        }
-      }
-
-      return NextResponse.json({
-        enrichment_available: true,
-        company: company || {
-          name: domain.split(".")[0],
-          domain,
-          employeeCount: null,
-          revenue: null,
-          industry: null,
-          techStack: [],
-          recentFunding: null,
-          hqLocation: null,
-        },
-        roles: enrichedRoles,
-        deal_risk_score: waysInResult.deal_risk_score ?? 50,
-        competitive_signals: waysInResult.competitive_signals || null,
-        biggest_risk: waysInResult.biggest_risk || committeeResult.biggest_risk,
-        next_moves: waysInResult.next_moves || committeeResult.next_moves,
-        pattern: waysInResult.pattern || committeeResult.pattern,
-      });
-    } catch (e) {
-      console.error("Ways-in generation failed:", e);
-      // Fall back: return enriched roles without ways in
-      return NextResponse.json({
-        enrichment_available: true,
-        company: company || {
-          name: domain.split(".")[0],
-          domain,
-          employeeCount: null,
-          revenue: null,
-          industry: null,
-          techStack: [],
-          recentFunding: null,
-          hqLocation: null,
-        },
-        roles: enrichedRoles,
-        deal_risk_score: 50,
-        competitive_signals: null,
-        biggest_risk: committeeResult.biggest_risk,
-        next_moves: committeeResult.next_moves,
-        pattern: committeeResult.pattern,
-      });
     }
+
+    // Step 2: Generate suggested contacts via Claude (using real company context)
+    const result = await generateSuggestedContacts(
+      org,
+      committeeResult,
+      dealInputs,
+      domain
+    );
+
+    // Build company info from Apollo org data
+    const hqLocation = org
+      ? [org.city, org.state, org.country].filter(Boolean).join(", ") || null
+      : null;
+
+    const company = {
+      name: org?.name || domain.split(".")[0],
+      domain,
+      logoUrl: org?.logo_url || `https://logo.clearbit.com/${domain}`,
+      industry: org?.industry || null,
+      employeeCount: org?.estimated_num_employees || null,
+      revenue: org?.organization_revenue_printed || null,
+      description: org?.short_description || null,
+      techStack: [],
+      recentFunding: null,
+      hqLocation,
+    };
+
+    return NextResponse.json({
+      enrichment_available: true,
+      suggested_contacts: true,
+      company,
+      roles: result.matched_roles,
+      deal_risk_score: result.deal_risk_score ?? 50,
+      competitive_signals: result.competitive_signals || null,
+      biggest_risk: result.biggest_risk || committeeResult.biggest_risk,
+      next_moves: result.next_moves || committeeResult.next_moves,
+      pattern: result.pattern || committeeResult.pattern,
+    });
   } catch (e) {
     console.error("enrich-committee error:", e);
-    // Graceful fallback
     return NextResponse.json({
       enrichment_available: false,
       error: e instanceof Error ? e.message : "Enrichment failed",
     });
   }
-}
-
-function estimateWarmth(status: string, hasLinkedIn: boolean): number {
-  let base = 0;
-  if (status === "covered") base = 65;
-  else if (status === "gap") base = 20;
-  else base = 10;
-  if (hasLinkedIn) base += 15;
-  return Math.min(base, 100);
 }
