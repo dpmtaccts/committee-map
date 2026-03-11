@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import RoleCard from "@/components/RoleCard";
 import type { Role } from "@/components/RoleCard";
 import type { QuickMapInputs } from "@/components/QuickMapForm";
 import type { TranscriptInputs } from "@/components/TranscriptForm";
 import { toast } from "sonner";
-import { Check, Share2, Download } from "lucide-react";
+import { Check } from "lucide-react";
 
 export interface CommitteeResult {
   roles: Role[];
@@ -29,61 +28,28 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
   const [email, setEmail] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [sending, setSending] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-
-  const handleDownloadPdf = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      const res = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ result, inputs }),
-      });
-      if (!res.ok) throw new Error("PDF generation failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "relationship-map.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to generate PDF. Try again.");
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   const summaryLine =
     inputs.path === "quick_map"
-      ? `${inputs.productType} → ${inputs.industry} → ${inputs.dealSize} deal → ${inputs.dealStage}`
+      ? `${inputs.companyDomain || "Company"} relationship map`
       : result.deal_summary || "Based on your discovery call transcript";
 
   const handleEmailSubmit = async () => {
     if (!email.trim() || sending) return;
     setSending(true);
     try {
-      const insertData: Record<string, unknown> = {
-        email: email.trim(),
-        input_path: inputs.path,
-        results: result,
-      };
-      if (inputs.path === "quick_map") {
-        insertData.product_type = inputs.productType;
-        insertData.industry = inputs.industry;
-        insertData.buying_department = inputs.buyingDepartment;
-        insertData.company_size = inputs.companySize;
-        insertData.deal_size = inputs.dealSize;
-        insertData.deal_stage = inputs.dealStage;
-        insertData.contact_level = inputs.contactLevel;
-      } else {
-        insertData.deal_summary = result.deal_summary || null;
-      }
+      const companyDomain = inputs.path === "quick_map" ? inputs.companyDomain : "";
+      const roleContext = inputs.path === "quick_map" ? (inputs.roleContext || "") : "";
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(insertData),
+        body: JSON.stringify({
+          email: email.trim(),
+          companyDomain,
+          roleContext,
+          enriched: false,
+          results: result,
+        }),
       });
       if (!res.ok) throw new Error("Submit failed");
       setEmailSent(true);
@@ -97,37 +63,11 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
   return (
     <div className="space-y-10">
       {/* Header */}
-      <div className="flex items-start justify-between animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div>
-          <h2 className="text-[32px] font-black text-foreground mb-1 font-heading">Your Relationship Map</h2>
-          <p className="text-sm font-normal text-muted-foreground font-body">{summaryLine}</p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0 mt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDownloadPdf}
-            disabled={downloading}
-          >
-            <Download className="w-4 h-4 mr-1.5" />
-            {downloading ? "Generating..." : "PDF"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({ title: "My Relationship Map", url: window.location.href });
-              } else {
-                navigator.clipboard.writeText(window.location.href);
-                toast.success("Link copied to clipboard");
-              }
-            }}
-          >
-            <Share2 className="w-4 h-4 mr-1.5" />
-            Share
-          </Button>
-        </div>
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <h2 className="font-heading" style={{ fontSize: 32, fontWeight: 900, color: "#383838", marginBottom: 4 }}>
+          Your Relationship Map
+        </h2>
+        <p className="font-body" style={{ fontSize: 14, color: "#5B6670" }}>{summaryLine}</p>
       </div>
 
       {/* Role Cards */}
@@ -144,19 +84,37 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
       </div>
 
       {/* Biggest Risk */}
-      <div className="bg-secondary rounded-lg p-6 animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "400ms", animationFillMode: "both" }}>
-        <h3 className="text-lg font-bold text-destructive mb-2 font-heading">Your biggest relationship gap</h3>
-        <p className="font-light text-foreground leading-relaxed font-body">{result.biggest_risk}</p>
+      <div
+        className="rounded-lg p-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
+        style={{
+          background: "rgba(184,92,74,0.05)",
+          borderLeft: "3px solid #B85C4A",
+          animationDelay: "400ms",
+          animationFillMode: "both",
+        }}
+      >
+        <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 700, color: "#B85C4A", marginBottom: 8 }}>
+          Your biggest relationship gap
+        </h3>
+        <p className="font-body" style={{ fontSize: 15, fontWeight: 300, color: "#383838", lineHeight: 1.6 }}>
+          {result.biggest_risk}
+        </p>
       </div>
 
       {/* Next Moves */}
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "500ms", animationFillMode: "both" }}>
-        <h3 className="text-xl font-bold text-foreground mb-4 font-heading">Your next three moves</h3>
+        <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 700, color: "#383838", marginBottom: 16 }}>
+          Your next three moves
+        </h3>
         <div className="space-y-3">
           {result.next_moves.map((move, i) => (
-            <div key={i} className="bg-card border border-border rounded-lg p-4 flex gap-3">
-              <span className="flex-shrink-0 text-2xl font-bold text-primary font-body">{i + 1}.</span>
-              <p className="font-light text-foreground leading-relaxed font-body pt-1">{move}</p>
+            <div key={i} className="rounded-lg p-4 flex gap-3" style={{ background: "#FFFFFF", border: "1px solid #D7DADD" }}>
+              <span className="flex-shrink-0 font-body" style={{ fontSize: 24, fontWeight: 700, color: "#1FA7A2" }}>
+                {i + 1}.
+              </span>
+              <p className="font-body pt-1" style={{ fontSize: 15, fontWeight: 300, color: "#383838", lineHeight: 1.5 }}>
+                {move}
+              </p>
             </div>
           ))}
         </div>
@@ -164,21 +122,30 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
 
       {/* Pattern */}
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "600ms", animationFillMode: "both" }}>
-        <h3 className="text-xl font-bold text-foreground mb-2 font-heading">The pattern to watch</h3>
-        <p className="font-light text-muted-foreground leading-relaxed font-body">{result.pattern}</p>
+        <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 700, color: "#383838", marginBottom: 8 }}>
+          The pattern to watch
+        </h3>
+        <p className="font-body" style={{ fontSize: 15, fontWeight: 300, color: "#5B6670", lineHeight: 1.6 }}>
+          {result.pattern}
+        </p>
       </div>
 
       {/* Email Capture */}
-      <div className="bg-card border border-border rounded-lg p-6 text-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "700ms", animationFillMode: "both" }}>
+      <div
+        className="rounded-xl p-6 text-center animate-in fade-in slide-in-from-bottom-2 duration-300"
+        style={{ background: "#FFFFFF", border: "1px solid #D7DADD", animationDelay: "700ms", animationFillMode: "both" }}
+      >
         {emailSent ? (
-          <div className="flex items-center justify-center gap-2 text-primary animate-in fade-in duration-200">
+          <div className="flex items-center justify-center gap-2 animate-in fade-in duration-200" style={{ color: "#1FA7A2" }}>
             <Check className="w-5 h-5" />
             <span className="font-semibold font-body">Sent. Check your inbox.</span>
           </div>
         ) : (
           <>
-            <h3 className="text-lg font-bold text-foreground mb-1 font-heading">Send this map to your inbox</h3>
-            <p className="text-sm font-light text-muted-foreground mb-4 font-body">
+            <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 700, color: "#383838", marginBottom: 4 }}>
+              Send this map to your inbox
+            </h3>
+            <p className="font-body" style={{ fontSize: 13, fontWeight: 300, color: "#5B6670", marginBottom: 16 }}>
               A clean copy, nothing else. No spam, no sequence.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -187,20 +154,40 @@ const ResultsView = ({ inputs, result, onReset }: ResultsViewProps) => {
                 placeholder="you@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="flex-1 h-11 px-4 rounded-lg border border-input bg-card text-foreground font-body text-base placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring"
+                className="flex-1 h-11 px-4 rounded-lg font-body text-base focus:outline-none focus:ring-2"
+                style={{ border: "1px solid #D7DADD", color: "#383838", background: "#FFFFFF" }}
               />
-              <Button onClick={handleEmailSubmit} disabled={!email.trim() || sending} className="h-11">
+              <button
+                onClick={handleEmailSubmit}
+                disabled={!email.trim() || sending}
+                className="h-11 px-6 rounded-lg font-body font-semibold transition-all cursor-pointer"
+                style={{
+                  fontSize: 14,
+                  background: email.trim() && !sending ? "#383838" : "#D7DADD",
+                  color: email.trim() && !sending ? "#FFFFFF" : "#5B6670",
+                  border: "none",
+                }}
+              >
                 {sending ? "Sending..." : "Send"}
-              </Button>
+              </button>
             </div>
           </>
         )}
       </div>
 
       {/* Map Another */}
-      <Button variant="outline" size="xl" onClick={onReset} className="h-12">
+      <button
+        onClick={onReset}
+        className="w-full h-12 rounded-lg font-body font-semibold cursor-pointer transition-all"
+        style={{
+          fontSize: 14,
+          background: "transparent",
+          color: "#383838",
+          border: "1px solid #D7DADD",
+        }}
+      >
         Map another deal
-      </Button>
+      </button>
     </div>
   );
 };

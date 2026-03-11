@@ -12,6 +12,19 @@ export async function POST(req: NextRequest) {
     let prompt: string;
     let systemPrompt: string;
 
+    // Handle new simplified format (backward compat)
+    if (body.companyDomain && !body.productType) {
+      // New format — redirect to generate-map
+      const { companyDomain, roleContext, linkedinUrl } = body;
+      const generateRes = await fetch(new URL("/api/generate-map", req.url), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyDomain, roleContext, linkedinUrl }),
+      });
+      const data = await generateRes.json();
+      return NextResponse.json(data, { status: generateRes.status });
+    }
+
     if (body.path === "transcript") {
       systemPrompt = BASE_SYSTEM_PROMPT;
 

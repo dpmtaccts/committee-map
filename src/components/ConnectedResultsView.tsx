@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Check, Share2, Download, ChevronDown, ExternalLink, Building2, Globe } from "lucide-react";
-import type { DealInputs } from "@/components/ResultsView";
+import { Check, ChevronDown, ExternalLink, Building2, Globe } from "lucide-react";
+import type { QuickMapInputs } from "@/components/QuickMapForm";
+import type { TranscriptInputs } from "@/components/TranscriptForm";
+
+export type DealInputs = QuickMapInputs | TranscriptInputs;
 
 interface WayIn {
   type: "mutual" | "signal" | "content" | "event";
@@ -57,11 +59,20 @@ interface ConnectedResultsViewProps {
   onReset: () => void;
 }
 
+const ROLE_BORDER_COLORS: Record<string, string> = {
+  "Economic Buyer": "#B85C4A",
+  "Champion": "#1FA7A2",
+  "Technical Evaluator": "#D6B26D",
+  "Coach": "#D43D8D",
+  "End User": "#5B6670",
+  "Blocker": "#B85C4A",
+};
+
 const WAY_IN_COLORS: Record<string, string> = {
   mutual: "#7B68A5",
-  signal: "#2A9D8F",
-  content: "#C4713B",
-  event: "#8B8B8B",
+  signal: "#1FA7A2",
+  content: "#B85C4A",
+  event: "#5B6670",
 };
 
 const WAY_IN_LABELS: Record<string, string> = {
@@ -71,17 +82,17 @@ const WAY_IN_LABELS: Record<string, string> = {
   event: "Event",
 };
 
-// Risk score ring SVG
+// Risk score ring
 function RiskRing({ score, size = 64 }: { score: number; size?: number }) {
   const radius = (size - 8) / 2;
   const circumference = 2 * Math.PI * radius;
-  const filled = ((100 - score) / 100) * circumference; // invert: lower risk = more fill
-  const color = score > 70 ? "#C4484E" : score > 40 ? "#C4713B" : "#2A9D8F";
+  const filled = ((100 - score) / 100) * circumference;
+  const color = score > 70 ? "#C4484E" : score > 40 ? "#B85C4A" : "#1FA7A2";
 
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#E8E7E4" strokeWidth={4} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#D7DADD" strokeWidth={4} />
         <circle
           cx={size / 2} cy={size / 2} r={radius} fill="none"
           stroke={color} strokeWidth={4}
@@ -91,41 +102,21 @@ function RiskRing({ score, size = 64 }: { score: number; size?: number }) {
           style={{ transition: "stroke-dashoffset 1s ease-out" }}
         />
       </svg>
-      <span
-        className="absolute font-heading"
-        style={{ fontSize: size > 50 ? 18 : 13, fontWeight: 900, color }}
-      >
+      <span className="absolute font-heading" style={{ fontSize: size > 50 ? 18 : 13, fontWeight: 900, color }}>
         {score}
       </span>
     </div>
   );
 }
 
-// Warmth indicator
-function WarmthBar({ warmth }: { warmth: number }) {
-  const color = warmth > 60 ? "#2A9D8F" : warmth > 30 ? "#C4713B" : "#C4484E";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full" style={{ background: "#E8E7E4" }}>
-        <div
-          className="h-full rounded-full"
-          style={{ width: `${warmth}%`, background: color, transition: "width 0.8s ease-out" }}
-        />
-      </div>
-      <span className="font-body" style={{ fontSize: 11, color: "#999", minWidth: 28 }}>
-        {warmth}%
-      </span>
-    </div>
-  );
-}
+// Expandable role card
+function RoleCard({ role, defaultOpen }: { role: EnrichedRole; defaultOpen?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultOpen || false);
 
-// Expandable connected role card
-function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
-  const [expanded, setExpanded] = useState(false);
-
+  const borderColor = ROLE_BORDER_COLORS[role.role] || "#5B6670";
   const statusConfig = {
-    covered: { label: "Covered", color: "#2A9D8F", bg: "rgba(42,157,143,0.1)" },
-    gap: { label: "Gap", color: "#C4713B", bg: "rgba(196,113,59,0.1)" },
+    covered: { label: "Covered", color: "#1FA7A2", bg: "rgba(31,167,162,0.1)" },
+    gap: { label: "Gap", color: "#B85C4A", bg: "rgba(184,92,74,0.1)" },
     risk: { label: "Risk", color: "#C4484E", bg: "rgba(196,72,78,0.1)" },
   };
   const config = statusConfig[role.status];
@@ -135,13 +126,12 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
       className="rounded-xl overflow-hidden cursor-pointer transition-shadow duration-200"
       style={{
         background: "#FFFFFF",
-        border: "1px solid #E8E7E4",
-        borderLeft: `4px solid ${config.color}`,
+        border: "1px solid #D7DADD",
+        borderLeft: `4px solid ${borderColor}`,
         boxShadow: expanded ? "0 4px 20px rgba(0,0,0,0.08)" : "0 1px 3px rgba(0,0,0,0.04)",
       }}
       onClick={() => setExpanded(!expanded)}
     >
-      {/* Header — always visible */}
       <div className="p-5">
         <div className="flex items-start justify-between mb-1">
           <div className="flex-1">
@@ -168,7 +158,7 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     className="flex items-center gap-1 hover:underline"
-                    style={{ color: "#2A9D8F", fontSize: 13 }}
+                    style={{ color: "#1FA7A2", fontSize: 13 }}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                     <span className="font-body">LinkedIn</span>
@@ -176,21 +166,18 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
                 )}
               </div>
             ) : (
-              <p className="font-body mt-1" style={{ fontSize: 15, fontWeight: 600, color: "#BCBCBC", fontStyle: "italic" }}>
+              <p className="font-body mt-1" style={{ fontSize: 15, fontWeight: 600, color: "#D7DADD", fontStyle: "italic" }}>
                 Unidentified
               </p>
             )}
-            <p className="font-body" style={{ fontSize: 14, color: "#888", marginTop: 2 }}>
+            <p className="font-body" style={{ fontSize: 14, color: "#5B6670", marginTop: 2 }}>
               {role.title || role.likely_title}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {role.name && <WarmthBar warmth={role.warmth} />}
-            <ChevronDown
-              className="w-4 h-4 transition-transform duration-200 flex-shrink-0"
-              style={{ color: "#999", transform: expanded ? "rotate(180deg)" : "rotate(0)" }}
-            />
-          </div>
+          <ChevronDown
+            className="w-4 h-4 transition-transform duration-200 flex-shrink-0 mt-1"
+            style={{ color: "#5B6670", transform: expanded ? "rotate(180deg)" : "rotate(0)" }}
+          />
         </div>
       </div>
 
@@ -203,10 +190,10 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
           transition: "max-height 0.3s ease-out, opacity 0.2s ease-out",
         }}
       >
-        <div className="px-5 pb-5 space-y-4" style={{ borderTop: "1px solid #F0EFED" }}>
+        <div className="px-5 pb-5 space-y-4" style={{ borderTop: "1px solid #F6F5F2" }}>
           <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "#999" }}>
+              <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "#5B6670" }}>
                 What they care about
               </span>
               <p className="font-body mt-1" style={{ fontSize: 14, fontWeight: 300, color: "#383838", lineHeight: 1.5 }}>
@@ -214,7 +201,7 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
               </p>
             </div>
             <div>
-              <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "#999" }}>
+              <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "#5B6670" }}>
                 How they evaluate
               </span>
               <p className="font-body mt-1" style={{ fontSize: 14, fontWeight: 300, color: "#383838", lineHeight: 1.5 }}>
@@ -223,10 +210,9 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
             </div>
           </div>
 
-          {/* Ways In */}
           {role.waysIn && role.waysIn.length > 0 && (
             <div>
-              <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "#999" }}>
+              <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "#5B6670" }}>
                 Ways in
               </span>
               <div className="mt-2 space-y-2">
@@ -235,8 +221,8 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
                     key={i}
                     className="rounded-lg p-3 flex items-start gap-3"
                     style={{
-                      background: "#FAFAF9",
-                      borderLeft: `3px solid ${WAY_IN_COLORS[way.type] || "#999"}`,
+                      background: "#F6F5F2",
+                      borderLeft: `3px solid ${WAY_IN_COLORS[way.type] || "#5B6670"}`,
                     }}
                   >
                     <span style={{ fontSize: 16 }}>{way.icon}</span>
@@ -247,7 +233,7 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
                           fontSize: 9,
                           fontWeight: 700,
                           letterSpacing: "0.1em",
-                          color: WAY_IN_COLORS[way.type] || "#999",
+                          color: WAY_IN_COLORS[way.type] || "#5B6670",
                         }}
                       >
                         {WAY_IN_LABELS[way.type] || way.type}
@@ -261,13 +247,6 @@ function ConnectedRoleCard({ role }: { role: EnrichedRole }) {
               </div>
             </div>
           )}
-
-          {/* Email if available */}
-          {role.email && (
-            <p className="font-body" style={{ fontSize: 12, color: "#999" }}>
-              {role.email}
-            </p>
-          )}
         </div>
       </div>
     </div>
@@ -278,59 +257,23 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
   const [email, setEmail] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [sending, setSending] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-
-  const handleDownloadPdf = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      const res = await fetch("/api/generate-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enrichedResult: result, inputs }),
-      });
-      if (!res.ok) throw new Error("PDF generation failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `relationship-map-${result.company.name.toLowerCase().replace(/\s+/g, "-")}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error("Failed to generate PDF. Try again.");
-    } finally {
-      setDownloading(false);
-    }
-  };
-
-  const summaryLine =
-    inputs.path === "quick_map"
-      ? `${inputs.productType} → ${inputs.industry} → ${inputs.dealSize} deal → ${inputs.dealStage}`
-      : "Based on your discovery call transcript";
 
   const handleEmailSubmit = async () => {
     if (!email.trim() || sending) return;
     setSending(true);
     try {
-      const insertData: Record<string, unknown> = {
-        email: email.trim(),
-        input_path: inputs.path,
-        results: result,
-      };
-      if (inputs.path === "quick_map") {
-        insertData.product_type = inputs.productType;
-        insertData.industry = inputs.industry;
-        insertData.buying_department = inputs.buyingDepartment;
-        insertData.company_size = inputs.companySize;
-        insertData.deal_size = inputs.dealSize;
-        insertData.deal_stage = inputs.dealStage;
-        insertData.contact_level = inputs.contactLevel;
-      }
+      const companyDomain = result.company?.domain || "";
+      const roleContext = inputs.path === "quick_map" ? (inputs.roleContext || inputs.linkedinUrl || "") : "";
       const res = await fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(insertData),
+        body: JSON.stringify({
+          email: email.trim(),
+          companyDomain,
+          roleContext,
+          enriched: result.enrichment_available,
+          results: result,
+        }),
       });
       if (!res.ok) throw new Error("Submit failed");
       setEmailSent(true);
@@ -348,13 +291,13 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
       {/* Company Header Card */}
       <div
         className="rounded-xl p-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
-        style={{ background: "#FFFFFF", border: "1px solid #E8E7E4", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}
+        style={{ background: "#FFFFFF", border: "1px solid #D7DADD" }}
       >
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
             <div
               className="flex items-center justify-center rounded-lg flex-shrink-0 overflow-hidden"
-              style={{ width: 48, height: 48, background: "#F0EFED" }}
+              style={{ width: 48, height: 48, background: "#F6F5F2" }}
             >
               {company.logoUrl ? (
                 <img
@@ -365,11 +308,12 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
                   className="object-contain"
                   onError={(e) => {
                     e.currentTarget.style.display = "none";
-                    e.currentTarget.parentElement!.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) parent.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6670" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/></svg>';
                   }}
                 />
               ) : (
-                <Building2 className="w-5 h-5" style={{ color: "#999" }} />
+                <Building2 className="w-5 h-5" style={{ color: "#5B6670" }} />
               )}
             </div>
             <div>
@@ -378,103 +322,42 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
               </h2>
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 {company.domain && (
-                  <span className="font-body flex items-center gap-1" style={{ fontSize: 13, color: "#2A9D8F" }}>
+                  <span className="font-body flex items-center gap-1" style={{ fontSize: 13, color: "#1FA7A2" }}>
                     <Globe className="w-3 h-3" />
                     {company.domain}
                   </span>
                 )}
                 {company.industry && (
-                  <span className="font-body" style={{ fontSize: 13, color: "#888" }}>
-                    {company.industry}
-                  </span>
+                  <span className="font-body" style={{ fontSize: 13, color: "#5B6670" }}>{company.industry}</span>
                 )}
                 {company.employeeCount && (
-                  <span className="font-body" style={{ fontSize: 13, color: "#888" }}>
+                  <span className="font-body" style={{ fontSize: 13, color: "#5B6670" }}>
                     ~{company.employeeCount.toLocaleString()} employees
                   </span>
                 )}
                 {company.revenue && (
-                  <span className="font-body" style={{ fontSize: 13, color: "#888" }}>
-                    {company.revenue} revenue
-                  </span>
-                )}
-                {company.hqLocation && (
-                  <span className="font-body" style={{ fontSize: 13, color: "#888" }}>
-                    {company.hqLocation}
-                  </span>
+                  <span className="font-body" style={{ fontSize: 13, color: "#5B6670" }}>{company.revenue} revenue</span>
                 )}
               </div>
             </div>
           </div>
           <div className="flex flex-col items-center gap-1">
             <RiskRing score={result.deal_risk_score} />
-            <span className="font-body" style={{ fontSize: 10, fontWeight: 600, color: "#999", letterSpacing: "0.05em" }}>
+            <span className="font-body" style={{ fontSize: 10, fontWeight: 600, color: "#5B6670", letterSpacing: "0.05em" }}>
               DEAL RISK
             </span>
           </div>
         </div>
-
-        {/* Company description */}
-        {company.description && (
-          <p className="font-body mt-3" style={{ fontSize: 14, fontWeight: 300, color: "#666", lineHeight: 1.5 }}>
-            {company.description}
-          </p>
-        )}
-
-        {/* Summary line */}
-        <p className="font-body mt-2" style={{ fontSize: 13, color: "#999" }}>
-          {summaryLine}
-        </p>
-
-        {/* Tech stack / funding */}
-        <div className="flex flex-wrap gap-2 mt-3">
-          {company.techStack?.slice(0, 6).map((tech, i) => (
-            <span
-              key={i}
-              className="font-body rounded-full"
-              style={{ fontSize: 11, padding: "3px 10px", background: "#F0EFED", color: "#666" }}
-            >
-              {tech}
-            </span>
-          ))}
-          {company.recentFunding && (
-            <span
-              className="font-body rounded-full"
-              style={{ fontSize: 11, padding: "3px 10px", background: "rgba(42,157,143,0.08)", color: "#2A9D8F" }}
-            >
-              {company.recentFunding}
-            </span>
-          )}
-        </div>
       </div>
-
-      {/* Competitive Signals */}
-      {result.competitive_signals && result.competitive_signals.length > 0 && (
-        <div
-          className="rounded-lg p-4 animate-in fade-in slide-in-from-bottom-2 duration-300"
-          style={{ background: "rgba(196,72,78,0.05)", border: "1px solid rgba(196,72,78,0.12)", animationDelay: "100ms", animationFillMode: "both" }}
-        >
-          <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 700, color: "#C4484E", letterSpacing: "0.08em" }}>
-            Competitive Signals
-          </span>
-          <ul className="mt-2 space-y-1">
-            {result.competitive_signals.map((sig, i) => (
-              <li key={i} className="font-body" style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>
-                {sig}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       {/* Role Cards */}
       {result.suggested_contacts && (
         <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "120ms", animationFillMode: "both" }}>
-          <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#C4713B" }}>
+          <span className="font-body uppercase" style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#B85C4A" }}>
             Suggested contacts
           </span>
-          <span className="font-body" style={{ fontSize: 12, color: "#999" }}>
-            — based on company size &amp; structure. Verify on LinkedIn.
+          <span className="font-body" style={{ fontSize: 12, color: "#5B6670" }}>
+            &mdash; based on company size &amp; structure. Verify on LinkedIn.
           </span>
         </div>
       )}
@@ -485,17 +368,22 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
             className="animate-in fade-in slide-in-from-bottom-2 duration-300"
             style={{ animationDelay: `${150 + i * 80}ms`, animationFillMode: "both" }}
           >
-            <ConnectedRoleCard role={role} />
+            <RoleCard role={role} defaultOpen={i === 0} />
           </div>
         ))}
       </div>
 
-      {/* Biggest Risk — regenerated */}
+      {/* Biggest Gap - oxide styled */}
       <div
         className="rounded-lg p-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
-        style={{ background: "#F0EFED", animationDelay: "500ms", animationFillMode: "both" }}
+        style={{
+          background: "rgba(184,92,74,0.05)",
+          borderLeft: "3px solid #B85C4A",
+          animationDelay: "500ms",
+          animationFillMode: "both",
+        }}
       >
-        <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 700, color: "#C4484E", marginBottom: 8 }}>
+        <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 700, color: "#B85C4A", marginBottom: 8 }}>
           Your biggest relationship gap
         </h3>
         <p className="font-body" style={{ fontSize: 15, fontWeight: 300, color: "#383838", lineHeight: 1.6 }}>
@@ -503,7 +391,7 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
         </p>
       </div>
 
-      {/* Next Moves — regenerated */}
+      {/* Next Moves - teal numbers */}
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: "600ms", animationFillMode: "both" }}>
         <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 700, color: "#383838", marginBottom: 16 }}>
           Your next three moves
@@ -513,9 +401,9 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
             <div
               key={i}
               className="rounded-lg p-4 flex gap-3"
-              style={{ background: "#FFFFFF", border: "1px solid #E8E7E4" }}
+              style={{ background: "#FFFFFF", border: "1px solid #D7DADD" }}
             >
-              <span className="flex-shrink-0 font-body" style={{ fontSize: 24, fontWeight: 700, color: "#2A9D8F" }}>
+              <span className="flex-shrink-0 font-body" style={{ fontSize: 24, fontWeight: 700, color: "#1FA7A2" }}>
                 {i + 1}.
               </span>
               <p className="font-body pt-1" style={{ fontSize: 15, fontWeight: 300, color: "#383838", lineHeight: 1.5 }}>
@@ -531,7 +419,7 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
         <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 700, color: "#383838", marginBottom: 8 }}>
           The pattern to watch
         </h3>
-        <p className="font-body" style={{ fontSize: 15, fontWeight: 300, color: "#888", lineHeight: 1.6 }}>
+        <p className="font-body" style={{ fontSize: 15, fontWeight: 300, color: "#5B6670", lineHeight: 1.6 }}>
           {result.pattern}
         </p>
       </div>
@@ -539,10 +427,10 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
       {/* Email Capture */}
       <div
         className="rounded-xl p-6 text-center animate-in fade-in slide-in-from-bottom-2 duration-300"
-        style={{ background: "#FFFFFF", border: "1px solid #E8E7E4", animationDelay: "800ms", animationFillMode: "both" }}
+        style={{ background: "#FFFFFF", border: "1px solid #D7DADD", animationDelay: "800ms", animationFillMode: "both" }}
       >
         {emailSent ? (
-          <div className="flex items-center justify-center gap-2 animate-in fade-in duration-200" style={{ color: "#2A9D8F" }}>
+          <div className="flex items-center justify-center gap-2 animate-in fade-in duration-200" style={{ color: "#1FA7A2" }}>
             <Check className="w-5 h-5" />
             <span className="font-semibold font-body">Sent. Check your inbox.</span>
           </div>
@@ -551,7 +439,7 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
             <h3 className="font-heading" style={{ fontSize: 18, fontWeight: 700, color: "#383838", marginBottom: 4 }}>
               Send this map to your inbox
             </h3>
-            <p className="font-body" style={{ fontSize: 13, fontWeight: 300, color: "#888", marginBottom: 16 }}>
+            <p className="font-body" style={{ fontSize: 13, fontWeight: 300, color: "#5B6670", marginBottom: 16 }}>
               A clean copy, nothing else. No spam, no sequence.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -566,13 +454,12 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
               <button
                 onClick={handleEmailSubmit}
                 disabled={!email.trim() || sending}
-                className="h-11 px-6 rounded-lg font-body font-semibold transition-all"
+                className="h-11 px-6 rounded-lg font-body font-semibold transition-all cursor-pointer"
                 style={{
                   fontSize: 14,
-                  background: email.trim() && !sending ? "#2A9D8F" : "#E8E7E4",
-                  color: email.trim() && !sending ? "#FFFFFF" : "#BCBCBC",
+                  background: email.trim() && !sending ? "#383838" : "#D7DADD",
+                  color: email.trim() && !sending ? "#FFFFFF" : "#5B6670",
                   border: "none",
-                  cursor: email.trim() && !sending ? "pointer" : "default",
                 }}
               >
                 {sending ? "Sending..." : "Send"}
@@ -582,38 +469,19 @@ const ConnectedResultsView = ({ inputs, result, onReset }: ConnectedResultsViewP
         )}
       </div>
 
-      {/* PDF + Share + Map Another */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Button
-          variant="ghost"
-          size="lg"
-          className="flex-1"
-          onClick={handleDownloadPdf}
-          disabled={downloading}
-        >
-          <Download className="w-4 h-4 mr-1.5" />
-          {downloading ? "Generating..." : "PDF"}
-        </Button>
-        <Button
-          variant="outline"
-          size="lg"
-          className="flex-1"
-          onClick={() => {
-            if (navigator.share) {
-              navigator.share({ title: "My Relationship Map", url: window.location.href });
-            } else {
-              navigator.clipboard.writeText(window.location.href);
-              toast.success("Link copied to clipboard");
-            }
-          }}
-        >
-          <Share2 className="w-4 h-4 mr-1.5" />
-          Share this
-        </Button>
-        <Button variant="outline" size="lg" className="flex-1" onClick={onReset}>
-          Map another deal
-        </Button>
-      </div>
+      {/* Map Another */}
+      <button
+        onClick={onReset}
+        className="w-full h-12 rounded-lg font-body font-semibold cursor-pointer transition-all"
+        style={{
+          fontSize: 14,
+          background: "transparent",
+          color: "#383838",
+          border: "1px solid #D7DADD",
+        }}
+      >
+        Map another deal
+      </button>
     </div>
   );
 };

@@ -1,26 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import SelectionButton from "@/components/SelectionButton";
-import DealSlider, { DEAL_STOPS } from "@/components/DealSlider";
-import PipelineSelector from "@/components/PipelineSelector";
 
-const PRODUCT_TYPES = ["Software / Platform", "Professional Services", "Hardware / Infrastructure", "Managed Services"];
-const INDUSTRIES = ["SaaS / Tech", "Manufacturing", "Healthcare", "Financial Services", "Professional Services", "Retail / E-commerce"];
-const BUYING_DEPTS = ["Marketing", "Sales / Revenue", "IT / Engineering", "Finance / Operations", "C-Suite / Executive"];
-const COMPANY_SIZES = ["Under $10M", "$10M–$100M", "$100M–$500M", "$500M+"];
-const CONTACT_LEVELS = ["C-Level", "VP", "Director", "Manager", "IC"];
+const ROLES = [
+  "VP of Sales",
+  "VP of Marketing",
+  "Head of Sales",
+  "Chief Revenue Officer",
+  "Sales Director",
+  "VP of Operations",
+  "Marketing Director",
+  "Head of Growth",
+];
 
 export interface QuickMapInputs {
   path: "quick_map";
-  productType: string;
-  industry: string;
-  buyingDepartment: string;
-  companySize: string;
-  dealSize: string;
-  dealStage: string;
-  contactLevel: string;
-  companyDomain?: string;
+  companyDomain: string;
+  roleContext: string | null;
+  linkedinUrl: string | null;
+  // Legacy fields for backward compat
+  productType?: string;
+  industry?: string;
+  buyingDepartment?: string;
+  companySize?: string;
+  dealSize?: string;
+  dealStage?: string;
+  contactLevel?: string;
   email?: string;
 }
 
@@ -29,160 +34,174 @@ interface QuickMapFormProps {
   isLoading: boolean;
 }
 
-const InputGroup = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div>
-    <label
-      className="block font-body uppercase"
-      style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", color: "#5B6670", marginBottom: 5 }}
-    >
-      {label}
-    </label>
-    {children}
-  </div>
-);
+type MappingMode = "linkedin" | "role" | null;
 
 const QuickMapForm = ({ onSubmit, isLoading }: QuickMapFormProps) => {
   const [companyDomain, setCompanyDomain] = useState("");
-  const [email, setEmail] = useState("");
-  const [productType, setProductType] = useState("");
-  const [industry, setIndustry] = useState("");
-  const [buyingDepartment, setBuyingDepartment] = useState("");
-  const [companySize, setCompanySize] = useState("");
-  const [dealSizeIndex, setDealSizeIndex] = useState(2);
-  const [dealStage, setDealStage] = useState("");
-  const [contactLevel, setContactLevel] = useState("");
+  const [mappingMode, setMappingMode] = useState<MappingMode>(null);
+  const [linkedinUrl, setLinkedinUrl] = useState("");
+  const [selectedRole, setSelectedRole] = useState("");
 
   const hasDomain = companyDomain.trim().length > 0;
-  const hasEmail = email.trim().includes("@");
-  const isValid = productType && industry && buyingDepartment && companySize && dealStage && contactLevel
-    && (!hasDomain || hasEmail); // email required only if domain is filled
+  const hasLinkedin = mappingMode === "linkedin" && linkedinUrl.trim().length > 0;
+  const hasRole = mappingMode === "role" && selectedRole.length > 0;
+  const isValid = hasDomain && (hasLinkedin || hasRole);
 
   const handleSubmit = () => {
     if (!isValid || isLoading) return;
     onSubmit({
       path: "quick_map",
-      productType,
-      industry,
-      buyingDepartment,
-      companySize,
-      dealSize: DEAL_STOPS[dealSizeIndex],
-      dealStage,
-      contactLevel,
-      companyDomain: hasDomain ? companyDomain.trim() : undefined,
-      email: hasEmail ? email.trim() : undefined,
+      companyDomain: companyDomain.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, ""),
+      roleContext: mappingMode === "role" ? selectedRole : null,
+      linkedinUrl: mappingMode === "linkedin" ? linkedinUrl.trim() : null,
     });
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Company domain (optional) */}
-      <InputGroup label="Company domain (optional)">
+    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+      {/* Company Domain */}
+      <div>
+        <label
+          className="block font-body uppercase"
+          style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, color: "#5B6670", marginBottom: 8 }}
+        >
+          Company Domain
+        </label>
         <input
           type="text"
-          placeholder="e.g., netrush.com"
+          placeholder="company.com"
           value={companyDomain}
           onChange={(e) => setCompanyDomain(e.target.value)}
-          className="w-full h-10 px-4 rounded-lg font-body text-sm focus:outline-none focus:ring-2"
-          style={{ border: "1px solid #D7DADD", color: "#383838", background: "#FFFFFF" }}
+          className="w-full font-body focus:outline-none transition-colors"
+          style={{
+            height: 48,
+            padding: "0 16px",
+            fontSize: 15,
+            borderRadius: 8,
+            color: "#383838",
+            background: "#F6F5F2",
+            border: hasDomain ? "1.5px solid #1FA7A2" : "1.5px solid transparent",
+          }}
         />
-      </InputGroup>
-
-      {/* Row 1: What do you sell + Industry */}
-      <div className="flex flex-wrap gap-[14px]">
-        <div className="flex-1 min-w-[140px]">
-          <InputGroup label="What do you sell?">
-            <div className="flex flex-wrap gap-1.5">
-              {PRODUCT_TYPES.map((t) => (
-                <SelectionButton key={t} label={t} selected={productType === t} onClick={() => setProductType(t)} disabled={isLoading} />
-              ))}
-            </div>
-          </InputGroup>
-        </div>
-        <div className="flex-1 min-w-[140px]">
-          <InputGroup label="Industry">
-            <div className="flex flex-wrap gap-1.5">
-              {INDUSTRIES.map((t) => (
-                <SelectionButton key={t} label={t} selected={industry === t} onClick={() => setIndustry(t)} disabled={isLoading} />
-              ))}
-            </div>
-          </InputGroup>
-        </div>
       </div>
 
-      {/* Row 2: Who buys it + Company size */}
-      <div className="flex flex-wrap gap-[14px]">
-        <div className="flex-1 min-w-[140px]">
-          <InputGroup label="Who buys it?">
-            <div className="flex flex-wrap gap-1.5">
-              {BUYING_DEPTS.map((t) => (
-                <SelectionButton key={t} label={t} selected={buyingDepartment === t} onClick={() => setBuyingDepartment(t)} disabled={isLoading} />
-              ))}
-            </div>
-          </InputGroup>
+      {/* Divider */}
+      <div style={{ height: 1, background: "#D7DADD" }} />
+
+      {/* Who are we mapping? */}
+      <div>
+        <label
+          className="block font-body uppercase"
+          style={{ fontSize: 11, fontWeight: 600, letterSpacing: 2, color: "#5B6670", marginBottom: 12 }}
+        >
+          Who are we mapping?
+        </label>
+
+        {/* Toggle buttons */}
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => setMappingMode(mappingMode === "linkedin" ? null : "linkedin")}
+            className="flex-1 font-body cursor-pointer transition-all duration-150"
+            style={{
+              padding: "10px 12px",
+              fontSize: 14,
+              borderRadius: 8,
+              fontWeight: mappingMode === "linkedin" ? 600 : 400,
+              border: mappingMode === "linkedin" ? "1.5px solid #1FA7A2" : "1.5px solid #D7DADD",
+              background: mappingMode === "linkedin" ? "rgba(31,167,162,0.06)" : "#FFFFFF",
+              color: mappingMode === "linkedin" ? "#1FA7A2" : "#383838",
+            }}
+          >
+            I have a LinkedIn profile
+          </button>
+          <button
+            type="button"
+            onClick={() => setMappingMode(mappingMode === "role" ? null : "role")}
+            className="flex-1 font-body cursor-pointer transition-all duration-150"
+            style={{
+              padding: "10px 12px",
+              fontSize: 14,
+              borderRadius: 8,
+              fontWeight: mappingMode === "role" ? 600 : 400,
+              border: mappingMode === "role" ? "1.5px solid #1FA7A2" : "1.5px solid #D7DADD",
+              background: mappingMode === "role" ? "rgba(31,167,162,0.06)" : "#FFFFFF",
+              color: mappingMode === "role" ? "#1FA7A2" : "#383838",
+            }}
+          >
+            Show me by role
+          </button>
         </div>
-        <div className="flex-1 min-w-[140px]">
-          <InputGroup label="Company size">
-            <div className="flex flex-wrap gap-1.5">
-              {COMPANY_SIZES.map((t) => (
-                <SelectionButton key={t} label={t} selected={companySize === t} onClick={() => setCompanySize(t)} disabled={isLoading} />
-              ))}
-            </div>
-          </InputGroup>
-        </div>
+
+        {/* LinkedIn URL input */}
+        {mappingMode === "linkedin" && (
+          <div className="mt-4 animate-in fade-in duration-200">
+            <input
+              type="text"
+              placeholder="linkedin.com/in/name"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+              className="w-full font-body focus:outline-none transition-colors"
+              style={{
+                height: 48,
+                padding: "0 16px",
+                fontSize: 15,
+                borderRadius: 8,
+                color: "#383838",
+                background: "#F6F5F2",
+                border: hasLinkedin ? "1.5px solid #1FA7A2" : "1.5px solid transparent",
+              }}
+            />
+          </div>
+        )}
+
+        {/* Role chips */}
+        {mappingMode === "role" && (
+          <div className="mt-4 flex flex-wrap gap-2 animate-in fade-in duration-200">
+            {ROLES.map((role) => (
+              <button
+                key={role}
+                type="button"
+                onClick={() => setSelectedRole(selectedRole === role ? "" : role)}
+                className="font-body cursor-pointer transition-all duration-150"
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 14,
+                  borderRadius: 999,
+                  fontWeight: selectedRole === role ? 600 : 400,
+                  border: selectedRole === role ? "1.5px solid #1FA7A2" : "1.5px solid #D7DADD",
+                  background: selectedRole === role ? "rgba(31,167,162,0.06)" : "#FFFFFF",
+                  color: selectedRole === role ? "#1FA7A2" : "#383838",
+                }}
+              >
+                {role}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Row 3: Deal size (full width) */}
-      <InputGroup label="Deal size">
-        <DealSlider value={dealSizeIndex} onChange={setDealSizeIndex} disabled={isLoading} />
-      </InputGroup>
-
-      {/* Row 4: Deal stage + Your contact */}
-      <div className="flex flex-wrap gap-[14px]">
-        <div className="flex-1 min-w-[140px]">
-          <InputGroup label="Where's the deal?">
-            <PipelineSelector value={dealStage} onChange={setDealStage} disabled={isLoading} />
-          </InputGroup>
-        </div>
-        <div className="flex-1 min-w-[140px]">
-          <InputGroup label="Your current contact">
-            <div className="flex flex-wrap gap-1.5">
-              {CONTACT_LEVELS.map((t) => (
-                <SelectionButton key={t} label={t} selected={contactLevel === t} onClick={() => setContactLevel(t)} disabled={isLoading} />
-              ))}
-            </div>
-          </InputGroup>
-        </div>
-      </div>
-
-      {/* Email (optional unless domain is set) */}
-      <InputGroup label={hasDomain ? "Your work email" : "Your work email (optional)"}>
-        <input
-          type="email"
-          placeholder="you@company.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full h-10 px-4 rounded-lg font-body text-sm focus:outline-none focus:ring-2"
-          style={{ border: "1px solid #D7DADD", color: "#383838", background: "#FFFFFF" }}
-        />
-      </InputGroup>
-
-      {/* CTA */}
+      {/* Build my map button */}
       <button
         onClick={handleSubmit}
         disabled={!isValid || isLoading}
         className="w-full font-body font-semibold cursor-pointer transition-all duration-150"
         style={{
-          height: 48,
+          height: 52,
           borderRadius: 8,
-          fontSize: 14,
+          fontSize: 16,
           border: "none",
-          marginTop: 2,
-          background: isValid && !isLoading ? "#2A9D8F" : "#E8E7E4",
-          color: isValid && !isLoading ? "#FFFFFF" : "#BCBCBC",
-          boxShadow: isValid && !isLoading ? "0 4px 20px rgba(42,157,143,0.3)" : "none",
+          background: isValid && !isLoading ? "#383838" : "#D7DADD",
+          color: isValid && !isLoading ? "#FFFFFF" : "#5B6670",
+        }}
+        onMouseEnter={(e) => {
+          if (isValid && !isLoading) e.currentTarget.style.background = "#1FA7A2";
+        }}
+        onMouseLeave={(e) => {
+          if (isValid && !isLoading) e.currentTarget.style.background = "#383838";
         }}
       >
-        Build my map
+        {isLoading ? "Building..." : "Build my map"}
       </button>
     </div>
   );

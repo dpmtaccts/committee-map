@@ -1,119 +1,101 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import "./hero-animations.css";
-import EraHeader from "@/components/EraHeader";
-import HeroAnimation from "@/components/HeroAnimation";
+import { useState } from "react";
 import QuickMapForm from "@/components/QuickMapForm";
 import type { QuickMapInputs } from "@/components/QuickMapForm";
 import TranscriptForm from "@/components/TranscriptForm";
 import type { TranscriptInputs } from "@/components/TranscriptForm";
-import LoadingState from "@/components/LoadingState";
-import ResultsView from "@/components/ResultsView";
-import type { CommitteeResult, DealInputs } from "@/components/ResultsView";
 import ConnectedResultsView from "@/components/ConnectedResultsView";
 import type { EnrichedResult } from "@/components/ConnectedResultsView";
 import { toast } from "sonner";
 
-type Tab = "quick" | "transcript";
+export type DealInputs = QuickMapInputs | TranscriptInputs;
 
 const STATS = [
   {
     number: "5x",
-    color: "#2A9D8F",
     text: "Multi-threaded deals close at 5x the rate of single-threaded ones.",
-    source: "UserGems, 5,000+ opportunities",
+    source: "UserGems",
   },
   {
     number: "6-10",
-    color: "#2A9D8F",
-    text: "Decision-makers in the average B2B deal. Enterprise? Up to 20.",
+    text: "Decision makers in the average B2B deal. Enterprise? Up to 20.",
     source: "Gartner",
   },
   {
     number: "40%",
-    color: "#C4484E",
     text: "of deals stall because the primary contact leaves or changes roles.",
     source: "Gong",
   },
 ];
 
-const ENRICH_MESSAGES_TEMPLATE = [
-  "Finding people at {domain}...",
-  "Mapping your connections...",
-  "Building your ways in...",
-];
-
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("quick");
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingDomain, setLoadingDomain] = useState("");
   const [inputs, setInputs] = useState<DealInputs | null>(null);
-  const [result, setResult] = useState<CommitteeResult | null>(null);
   const [enrichedResult, setEnrichedResult] = useState<EnrichedResult | null>(null);
-  const [isEnriching, setIsEnriching] = useState(false);
-  const [enrichMsgIndex, setEnrichMsgIndex] = useState(0);
-  const [enrichDomain, setEnrichDomain] = useState("");
-
-  // Cycle enrichment loading messages
-  useEffect(() => {
-    if (!isEnriching) return;
-    const interval = setInterval(() => {
-      setEnrichMsgIndex((prev) => (prev + 1) % ENRICH_MESSAGES_TEMPLATE.length);
-    }, 2500);
-    return () => clearInterval(interval);
-  }, [isEnriching]);
+  const [showTranscript, setShowTranscript] = useState(false);
 
   const handleSubmit = async (dealInputs: DealInputs) => {
-    // Check if Quick Map with a company domain
-    const quickInputs = dealInputs.path === "quick_map" ? dealInputs as QuickMapInputs : null;
-    const companyDomain = quickInputs?.companyDomain;
-    const email = quickInputs?.email;
-
     setIsLoading(true);
     setInputs(dealInputs);
     setEnrichedResult(null);
 
-    if (companyDomain) {
-      setEnrichDomain(companyDomain);
+    if (dealInputs.path === "quick_map") {
+      setLoadingDomain(dealInputs.companyDomain);
     }
 
     try {
-      // Step 1: Generate generic committee map
-      const res = await fetch("/api/map-committee", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dealInputs),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Request failed");
-      const committeeResult = data as CommitteeResult;
-      setResult(committeeResult);
-
-      // Step 2: If company domain provided, enrich immediately
-      if (companyDomain) {
-        setIsLoading(false);
-        setIsEnriching(true);
-        setEnrichMsgIndex(0);
-
-        const enrichRes = await fetch("/api/enrich-committee", {
+      if (dealInputs.path === "quick_map") {
+        // New flow: combined generate-map route
+        const res = await fetch("/api/generate-map", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            companyDomain,
-            email,
-            dealInputs,
-            committeeResult,
-          }),
+          body: JSON.stringify(dealInputs),
         });
-        const enrichData = await enrichRes.json();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Request failed");
+        setEnrichedResult(data as EnrichedResult);
+      } else {
+        // Transcript flow: use existing map-committee route
+        const res = await fetch("/api/map-committee", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(dealInputs),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Request failed");
 
-        if (enrichRes.status === 429) {
-          toast.error(enrichData.error || "Too many requests. Try again in a moment.");
-        } else if (enrichData.enrichment_available === false) {
-          toast.error(enrichData.error || "Could not enrich this domain. Showing generic map.");
-        } else {
-          setEnrichedResult(enrichData as EnrichedResult);
-        }
+        // Wrap in EnrichedResult shape for display
+        setEnrichedResult({
+          enrichment_available: false,
+          company: {
+            name: "Transcript Analysis",
+            domain: "",
+            logoUrl: null,
+            employeeCount: null,
+            revenue: null,
+            industry: null,
+            techStack: [],
+            recentFunding: null,
+            hqLocation: null,
+            description: data.deal_summary || null,
+          },
+          roles: data.roles.map((r: Record<string, unknown>) => ({
+            ...r,
+            name: null,
+            linkedinUrl: null,
+            email: null,
+            warmth: 0,
+            title: r.likely_title,
+            waysIn: [],
+          })),
+          deal_risk_score: 50,
+          competitive_signals: null,
+          biggest_risk: data.biggest_risk,
+          next_moves: data.next_moves,
+          pattern: data.pattern,
+        });
       }
 
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -122,359 +104,191 @@ export default function Home() {
       toast.error("Something went wrong. Try again.");
     } finally {
       setIsLoading(false);
-      setIsEnriching(false);
-    }
-  };
-
-  // Enrich from results page (second-chance flow)
-  const handleEnrich = async (companyDomain: string, email?: string) => {
-    if (!result || !inputs) return;
-    setEnrichDomain(companyDomain);
-    setIsEnriching(true);
-    setEnrichMsgIndex(0);
-    try {
-      const res = await fetch("/api/enrich-committee", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyDomain,
-          email,
-          dealInputs: inputs,
-          committeeResult: result,
-        }),
-      });
-      const data = await res.json();
-      if (res.status === 429) {
-        toast.error(data.error || "Too many requests. Try again in a moment.");
-        return;
-      }
-      if (data.enrichment_available === false) {
-        toast.error(data.error || "No contacts found at this domain. Showing suggested roles.");
-        return;
-      }
-      setEnrichedResult(data as EnrichedResult);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (e) {
-      console.error(e);
-      toast.error("Something went wrong with enrichment. Try again.");
-    } finally {
-      setIsEnriching(false);
     }
   };
 
   const handleReset = () => {
-    setResult(null);
-    setInputs(null);
     setEnrichedResult(null);
+    setInputs(null);
     setIsLoading(false);
-    setIsEnriching(false);
+    setShowTranscript(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Enriched results page
-  if (enrichedResult && !isEnriching) {
+  // Results page
+  if (enrichedResult && !isLoading) {
     return (
       <div className="min-h-screen" style={{ background: "#F6F5F2" }}>
-        <EraHeader showMapAnother onReset={handleReset} />
-        <div className="max-w-[760px] mx-auto px-4 md:px-0 pb-16 pt-[72px]">
+        {/* Header */}
+        <header
+          className="fixed top-0 left-0 right-0 z-50"
+          style={{ background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid #D7DADD" }}
+        >
+          <div className="max-w-[760px] mx-auto flex items-center justify-between" style={{ padding: "14px 24px" }}>
+            <div className="flex items-center gap-2">
+              <span className="font-heading" style={{ fontSize: 18, fontWeight: 900, color: "#383838" }}>
+                <span style={{ display: "inline-block", width: 10, height: 10, background: "#383838", marginRight: 6 }} />
+                ERA
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={handleReset}
+                className="text-sm font-semibold cursor-pointer font-body hover:underline"
+                style={{ color: "#1FA7A2" }}
+              >
+                Map another deal
+              </button>
+              <span className="font-body" style={{ fontSize: 12, fontWeight: 400, color: "#5B6670" }}>
+                Relationship Map
+              </span>
+            </div>
+          </div>
+        </header>
+
+        <div className="max-w-[720px] mx-auto px-4 md:px-0 pb-16 pt-[72px]">
           <div className="pt-8">
             <ConnectedResultsView inputs={inputs!} result={enrichedResult} onReset={handleReset} />
           </div>
-          <footer className="mt-16 text-center" style={{ borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 32 }}>
-            <span className="font-body" style={{ fontSize: 13, color: "rgba(0,0,0,0.3)" }}>
+          <footer className="mt-16 text-center" style={{ borderTop: "1px solid #D7DADD", paddingTop: 32 }}>
+            <span className="font-body" style={{ fontSize: 13, color: "#5B6670" }}>
               Built by{" "}
-              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">Era</a>
+              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#1FA7A2" }} className="hover:underline">Era</a>
+              {" "}&middot;{" "}
+              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#1FA7A2" }} className="hover:underline">eracx.com</a>
             </span>
-            <br />
-            <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" className="font-body hover:underline" style={{ fontSize: 12, color: "#2A9D8F" }}>eracx.com</a>
-            <span className="font-body" style={{ margin: "0 6px", fontSize: 11, color: "rgba(0,0,0,0.2)" }}>&middot;</span>
-            <span className="font-body" style={{ fontSize: 11, color: "rgba(0,0,0,0.2)" }}>All data sourced from public business information.</span>
           </footer>
         </div>
       </div>
     );
   }
 
-  // Results page with enrichment prompt
-  if (result && !isLoading) {
+  // Loading state
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
-        <EraHeader showMapAnother onReset={handleReset} />
-        <div className="max-w-[720px] mx-auto px-4 md:px-0 pb-16 pt-[72px]">
-          <div className="pt-8">
-            <ResultsView inputs={inputs!} result={result} onReset={handleReset} />
-
-            {/* Enrichment CTA */}
-            {!isEnriching && (
-              <EnrichmentPrompt onEnrich={handleEnrich} />
-            )}
-
-            {/* Enrichment loading */}
-            {isEnriching && (
-              <div className="mt-10 rounded-xl p-8 text-center animate-in fade-in duration-300" style={{ background: "#F0EFED" }}>
-                <div className="inline-flex items-center gap-1 mb-4">
-                  <span className="h-2 w-2 rounded-full animate-pulse-dot" style={{ background: "#2A9D8F" }} />
-                  <span className="h-2 w-2 rounded-full animate-pulse-dot [animation-delay:0.2s]" style={{ background: "#2A9D8F" }} />
-                  <span className="h-2 w-2 rounded-full animate-pulse-dot [animation-delay:0.4s]" style={{ background: "#2A9D8F" }} />
-                </div>
-                <p
-                  key={enrichMsgIndex}
-                  className="font-body animate-in fade-in duration-300"
-                  style={{ fontSize: 15, fontWeight: 300, color: "#666" }}
-                >
-                  {ENRICH_MESSAGES_TEMPLATE[enrichMsgIndex].replace("{domain}", enrichDomain)}
-                </p>
-              </div>
-            )}
-          </div>
-          <footer className="mt-16 text-center" style={{ borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 32 }}>
-            <span className="font-body" style={{ fontSize: 13, color: "rgba(0,0,0,0.3)" }}>
-              Built by{" "}
-              <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">Era</a>
-            </span>
-            <br />
-            <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" className="font-body hover:underline" style={{ fontSize: 12, color: "#2A9D8F" }}>eracx.com</a>
-            <span className="font-body" style={{ margin: "0 6px", fontSize: 11, color: "rgba(0,0,0,0.2)" }}>&middot;</span>
-            <span className="font-body" style={{ fontSize: 11, color: "rgba(0,0,0,0.2)" }}>All data sourced from public business information.</span>
-          </footer>
-        </div>
-      </div>
-    );
-  }
-
-  // Loading / enriching state on dark background
-  if (isLoading || isEnriching) {
-    return (
-      <div className="min-h-screen" style={{ background: "#0E1013" }}>
-        <EraHeader />
-        <div className="pt-[72px]">
-          {isEnriching ? (
-            <div className="max-w-md mx-auto pt-32 text-center">
-              <div className="inline-flex items-center gap-1 mb-6">
-                <span className="h-2.5 w-2.5 rounded-full animate-pulse-dot" style={{ background: "#2A9D8F" }} />
-                <span className="h-2.5 w-2.5 rounded-full animate-pulse-dot [animation-delay:0.2s]" style={{ background: "#2A9D8F" }} />
-                <span className="h-2.5 w-2.5 rounded-full animate-pulse-dot [animation-delay:0.4s]" style={{ background: "#2A9D8F" }} />
-              </div>
-              <p
-                key={enrichMsgIndex}
-                className="font-body animate-in fade-in duration-300"
-                style={{ fontSize: 17, fontWeight: 300, color: "rgba(255,255,255,0.6)" }}
-              >
-                {ENRICH_MESSAGES_TEMPLATE[enrichMsgIndex].replace("{domain}", enrichDomain)}
-              </p>
-            </div>
-          ) : (
-            <LoadingState />
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Input page: dark two-column layout
-  return (
-    <div className="min-h-screen relative" style={{ background: "#0E1013" }}>
-      <HeroAnimation />
-      <EraHeader />
-
-      <div
-        className="max-w-[1100px] mx-auto px-4 md:px-8 pt-[72px]"
-        style={{ position: "relative", zIndex: 1 }}
-      >
-        <div className="flex flex-col lg:flex-row py-12 lg:py-20 items-start" style={{ gap: 56 }}>
-          {/* LEFT COLUMN — sticky on desktop */}
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#F6F5F2" }}>
+        <div className="text-center">
           <div
-            className="lg:sticky flex-shrink-0"
-            style={{ flex: "1 1 380px", minWidth: 300, top: 80 }}
+            className="mx-auto mb-6"
+            style={{
+              width: 40,
+              height: 40,
+              border: "3px solid #D7DADD",
+              borderTopColor: "#1FA7A2",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+            }}
+          />
+          <p className="font-heading" style={{ fontSize: 20, fontWeight: 700, color: "#383838", marginBottom: 8 }}>
+            Building your relationship map...
+          </p>
+          <p className="font-body" style={{ fontSize: 14, fontWeight: 300, color: "#5B6670" }}>
+            Enriching {loadingDomain || "company"} &middot; Mapping buying committee &middot; Generating insights
+          </p>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // Input page
+  return (
+    <div className="min-h-screen" style={{ background: "#F6F5F2" }}>
+      {/* Header */}
+      <header style={{ background: "#FFFFFF", borderBottom: "1px solid #D7DADD" }}>
+        <div className="max-w-[640px] mx-auto flex items-center justify-between" style={{ padding: "14px 24px" }}>
+          <div className="flex items-center gap-2">
+            <span className="font-heading" style={{ fontSize: 18, fontWeight: 900, color: "#383838" }}>
+              <span style={{ display: "inline-block", width: 10, height: 10, background: "#383838", marginRight: 6 }} />
+              ERA
+            </span>
+          </div>
+          <span className="font-body" style={{ fontSize: 12, fontWeight: 400, color: "#5B6670" }}>
+            Relationship Map
+          </span>
+        </div>
+      </header>
+
+      {/* Hero + Form */}
+      <div className="max-w-[640px] mx-auto px-4 md:px-0" style={{ paddingTop: 56, paddingBottom: 56 }}>
+        {/* Headline */}
+        <h1
+          className="font-heading"
+          style={{ fontSize: 40, fontWeight: 800, color: "#383838", lineHeight: 1.1, marginBottom: 16 }}
+        >
+          Build your relationship map.
+        </h1>
+        <p
+          className="font-body"
+          style={{ fontSize: 16, fontWeight: 300, color: "#5B6670", lineHeight: 1.6, marginBottom: 40 }}
+        >
+          70% of B2B opportunities have only one contact in the CRM. One person. One thread.
+          Know who&apos;s really involved in your biggest deals.
+        </p>
+
+        {/* Form Card */}
+        {!showTranscript ? (
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 12,
+              border: "1px solid #D7DADD",
+              padding: 32,
+            }}
           >
-            <div className="hero-fade-in">
+            <QuickMapForm onSubmit={handleSubmit} isLoading={isLoading} />
+          </div>
+        ) : (
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 12,
+              border: "1px solid #D7DADD",
+              padding: 32,
+            }}
+          >
+            <TranscriptForm onSubmit={handleSubmit} isLoading={isLoading} />
+          </div>
+        )}
 
-              <h1
-                className="font-heading"
-                style={{ fontSize: 44, fontWeight: 900, color: "#FFFFFF", lineHeight: 1.06, letterSpacing: -1 }}
-              >
-                Build your<br />relationship map.
-              </h1>
+        {/* Transcript toggle */}
+        <p className="text-center mt-4">
+          <button
+            onClick={() => setShowTranscript(!showTranscript)}
+            className="font-body cursor-pointer hover:underline"
+            style={{ fontSize: 13, color: "#5B6670", background: "none", border: "none" }}
+          >
+            {showTranscript ? "Back to quick map" : "Or drop a transcript \u2192"}
+          </button>
+        </p>
 
-              <p
-                className="font-body"
-                style={{ fontSize: 16, fontWeight: 300, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, marginTop: 16, maxWidth: 390, marginBottom: 44 }}
-              >
-                We see it all the time.{" "}
-                <span style={{ color: "rgba(255,255,255,0.75)", fontWeight: 400 }}>
-                  70% of B2B opportunities have only one contact in the CRM.
-                </span>{" "}
-                One person. One thread. Deals stall or go quiet because you&apos;ve been
-                moving things forward with one person, but the team isn&apos;t bought in.
-                Know who&apos;s involved in your biggest deals.
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-6 mt-12" style={{ borderTop: "1px solid #D7DADD", paddingTop: 28 }}>
+          {STATS.map((stat, i) => (
+            <div key={i}>
+              <p className="font-heading" style={{ fontSize: 28, fontWeight: 700, color: "#1FA7A2", marginBottom: 8 }}>
+                {stat.number}
               </p>
-
-              <div className="flex flex-col" style={{ gap: 28 }}>
-                {STATS.map((stat, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-start hero-stat-fade-in hero-stat-delay-${i}`}
-                  >
-                    <span
-                      className="font-heading flex-shrink-0 text-right"
-                      style={{ width: 90, fontSize: 48, fontWeight: 900, color: stat.color, letterSpacing: -2, lineHeight: 1 }}
-                    >
-                      {stat.number}
-                    </span>
-                    <div className="ml-4 pt-1">
-                      <p className="font-body" style={{ fontSize: 15, fontWeight: 300, color: "rgba(255,255,255,0.55)", lineHeight: 1.45 }}>
-                        {stat.text}
-                      </p>
-                      <p className="font-body" style={{ fontSize: 11, color: "rgba(255,255,255,0.18)", marginTop: 4 }}>
-                        {stat.source}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <p className="font-body" style={{ fontSize: 13, fontWeight: 300, color: "#5B6670", lineHeight: 1.5, marginBottom: 4 }}>
+                {stat.text}
+              </p>
+              <p className="font-body" style={{ fontSize: 11, color: "#D7DADD" }}>
+                {stat.source}
+              </p>
             </div>
-          </div>
-
-          {/* RIGHT COLUMN — scrolls naturally */}
-          <div className="w-full" style={{ flex: "0 0 auto", maxWidth: 480, minWidth: 360 }}>
-            <div
-              className="hero-card-fade-in"
-              style={{
-                background: "#FFFFFF",
-                borderRadius: 16,
-                padding: 28,
-                boxShadow: "0 8px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04)",
-              }}
-            >
-              <div className="flex gap-0 mb-6" style={{ borderBottom: "1.5px solid #E8E7E4" }}>
-                <button
-                  onClick={() => setTab("quick")}
-                  className="font-body cursor-pointer transition-colors"
-                  style={{
-                    padding: "10px 16px", fontSize: 14, fontWeight: 600,
-                    color: tab === "quick" ? "#2A9D8F" : "#999",
-                    background: "none", border: "none",
-                    borderBottomWidth: 2, borderBottomStyle: "solid",
-                    borderBottomColor: tab === "quick" ? "#2A9D8F" : "transparent",
-                    marginBottom: -1.5,
-                  }}
-                >
-                  Quick Map
-                </button>
-                <button
-                  onClick={() => setTab("transcript")}
-                  className="font-body cursor-pointer transition-colors"
-                  style={{
-                    padding: "10px 16px", fontSize: 14, fontWeight: 600,
-                    color: tab === "transcript" ? "#2A9D8F" : "#999",
-                    background: "none", border: "none",
-                    borderBottomWidth: 2, borderBottomStyle: "solid",
-                    borderBottomColor: tab === "transcript" ? "#2A9D8F" : "transparent",
-                    marginBottom: -1.5,
-                  }}
-                >
-                  Drop a Call
-                </button>
-              </div>
-
-              {tab === "quick" ? (
-                <QuickMapForm onSubmit={handleSubmit} isLoading={isLoading} />
-              ) : (
-                <TranscriptForm onSubmit={handleSubmit} isLoading={isLoading} />
-              )}
-            </div>
-
-            <p
-              className="text-center font-body"
-              style={{ fontSize: 12, fontWeight: 400, color: "rgba(255,255,255,0.2)", marginTop: 20 }}
-            >
-              Free. No login. Takes 60 seconds.
-            </p>
-          </div>
+          ))}
         </div>
       </div>
 
-      <footer
-        className="text-center font-body"
-        style={{
-          padding: "32px 0", borderTop: "1px solid rgba(255,255,255,0.04)",
-          fontSize: 13, fontWeight: 400, color: "rgba(255,255,255,0.15)",
-          position: "relative", zIndex: 1,
-        }}
-      >
-        Built by{" "}
-        <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F" }} className="hover:underline">
-          Era
-        </a>
-        <br />
-        <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#2A9D8F", fontSize: 12 }} className="hover:underline">
-          eracx.com
-        </a>
-        <span style={{ margin: "0 6px" }}>&middot;</span>
-        <span style={{ fontSize: 11 }}>All data sourced from public business information.</span>
+      {/* Footer */}
+      <footer className="text-center" style={{ padding: "24px 0", borderTop: "1px solid #D7DADD" }}>
+        <span className="font-body" style={{ fontSize: 13, color: "#5B6670" }}>
+          Built by{" "}
+          <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#1FA7A2" }} className="hover:underline">Era</a>
+          {" "}&middot;{" "}
+          <a href="https://eracx.com" target="_blank" rel="noopener noreferrer" style={{ color: "#1FA7A2" }} className="hover:underline">eracx.com</a>
+        </span>
       </footer>
-    </div>
-  );
-}
-
-// Enrichment prompt component (shown on results page as second chance)
-function EnrichmentPrompt({ onEnrich }: { onEnrich: (domain: string, email: string) => void }) {
-  const [domain, setDomain] = useState("");
-  const [enrichEmail, setEnrichEmail] = useState("");
-
-  const canSubmit = domain.trim().length > 0 && enrichEmail.trim().includes("@");
-
-  return (
-    <div
-      className="mt-10 rounded-xl p-6 animate-in fade-in slide-in-from-bottom-2 duration-500"
-      style={{
-        background: "linear-gradient(135deg, #F8F7F5 0%, #F0EFED 100%)",
-        border: "1px solid #E8E7E4",
-        animationDelay: "900ms",
-        animationFillMode: "both",
-      }}
-    >
-      <h3 className="font-heading" style={{ fontSize: 20, fontWeight: 700, color: "#383838", marginBottom: 4 }}>
-        Want to see real people and your ways in?
-      </h3>
-      <p className="font-body" style={{ fontSize: 14, fontWeight: 300, color: "#888", marginBottom: 16 }}>
-        Enter the company domain and we&apos;ll find the actual people in these roles, plus specific ways to reach them.
-      </p>
-
-      <div className="space-y-3">
-        <input
-          type="text"
-          placeholder="e.g., meridianhealth.com"
-          value={domain}
-          onChange={(e) => setDomain(e.target.value)}
-          className="w-full h-11 px-4 rounded-lg font-body text-sm focus:outline-none focus:ring-2"
-          style={{ border: "1px solid #D7DADD", color: "#383838", background: "#FFFFFF" }}
-        />
-        <input
-          type="email"
-          placeholder="your work email"
-          value={enrichEmail}
-          onChange={(e) => setEnrichEmail(e.target.value)}
-          className="w-full h-11 px-4 rounded-lg font-body text-sm focus:outline-none focus:ring-2"
-          style={{ border: "1px solid #D7DADD", color: "#383838", background: "#FFFFFF" }}
-        />
-        <button
-          onClick={() => canSubmit && onEnrich(domain.trim(), enrichEmail.trim())}
-          disabled={!canSubmit}
-          className="w-full font-body font-semibold cursor-pointer transition-all duration-150"
-          style={{
-            height: 48,
-            borderRadius: 8,
-            fontSize: 14,
-            border: "none",
-            background: canSubmit ? "#2A9D8F" : "#E8E7E4",
-            color: canSubmit ? "#FFFFFF" : "#BCBCBC",
-            boxShadow: canSubmit ? "0 4px 20px rgba(42,157,143,0.3)" : "none",
-          }}
-        >
-          Find real people
-        </button>
-      </div>
     </div>
   );
 }

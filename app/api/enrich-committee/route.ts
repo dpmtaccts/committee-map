@@ -1,24 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { Pool } from "pg";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Rate limit: max 10 enrichment requests per email per day
-async function checkRateLimit(email: string): Promise<boolean> {
-  if (!email || !process.env.DATABASE_URL) return true;
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  try {
-    const res = await pool.query(
-      `SELECT COUNT(*) as count FROM submissions WHERE email = $1 AND results->>'enrichment_available' = 'true' AND created_at > NOW() - INTERVAL '24 hours'`,
-      [email]
-    );
-    return parseInt(res.rows[0].count) < 10;
-  } catch {
+// Simple in-memory rate limit (resets on deploy)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(email: string): boolean {
+  if (!email) return true;
+  const now = Date.now();
+  const entry = rateLimitMap.get(email);
+  if (!entry || entry.resetAt < now) {
+    rateLimitMap.set(email, { count: 1, resetAt: now + 24 * 60 * 60 * 1000 });
     return true;
-  } finally {
-    await pool.end();
   }
+  if (entry.count >= 10) return false;
+  entry.count++;
+  return true;
 }
 
 interface Role {
@@ -195,7 +193,7 @@ export async function POST(req: NextRequest) {
 
     // Rate limiting
     if (email) {
-      const allowed = await checkRateLimit(email);
+      const allowed = checkRateLimit(email);
       if (!allowed) {
         return NextResponse.json(
           { error: "You've reached the daily enrichment limit. Try again tomorrow." },
