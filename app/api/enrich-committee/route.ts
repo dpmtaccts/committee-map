@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { enrichCompany } from "@/lib/databar";
+import type { CompanyData } from "@/lib/databar";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -27,68 +29,10 @@ interface Role {
   status: "covered" | "gap" | "risk";
 }
 
-interface ApolloOrg {
-  name: string;
-  logo_url: string | null;
-  website_url: string | null;
-  estimated_num_employees: number | null;
-  industry: string | null;
-  short_description: string | null;
-  city: string | null;
-  state: string | null;
-  country: string | null;
-  organization_revenue_printed: string | null;
-  keywords: string[] | null;
-}
-
-// ─── Step 1: Enrich company from Apollo ───
-
-async function enrichCompanyFromApollo(
-  domain: string
-): Promise<{ org: ApolloOrg | null; error?: string }> {
-  const apiKey = process.env.APOLLO_API_KEY;
-  if (!apiKey) {
-    return { org: null, error: "APOLLO_API_KEY not configured" };
-  }
-
-  try {
-    const res = await fetch(
-      `https://api.apollo.io/api/v1/organizations/enrich?domain=${encodeURIComponent(domain)}`,
-      {
-        method: "GET",
-        headers: {
-          "Cache-Control": "no-cache",
-          "X-Api-Key": apiKey,
-        },
-      }
-    );
-
-    if (res.status === 429) return { org: null, error: "rate_limit" };
-    if (res.status === 401) {
-      console.error("Apollo auth error");
-      return { org: null, error: "auth_error" };
-    }
-    if (!res.ok) {
-      console.error(`Apollo error: ${res.status}`);
-      return { org: null, error: `Apollo returned ${res.status}` };
-    }
-
-    const data = await res.json();
-    const org = data.organization as ApolloOrg | null;
-    if (org) {
-      console.log(`Apollo org enrichment: ${org.name} — ${org.industry} — ${org.estimated_num_employees} employees`);
-    }
-    return { org };
-  } catch (e) {
-    console.error("Apollo enrichment failed:", e);
-    return { org: null, error: "network_error" };
-  }
-}
-
-// ─── Step 2: Generate suggested contacts via Claude ───
+// ─── Generate suggested contacts via Claude ───
 
 async function generateSuggestedContacts(
-  org: ApolloOrg | null,
+  company: CompanyData | null,
   committeeResult: { roles: Role[]; biggest_risk: string; next_moves: string[]; pattern: string },
   dealInputs: Record<string, unknown>,
   domain: string
@@ -100,14 +44,14 @@ async function generateSuggestedContacts(
     )
     .join("\n");
 
-  const companyContext = org
-    ? `Company: ${org.name} (${domain})
-Industry: ${org.industry || "unknown"}
-Employees: ${org.estimated_num_employees || "unknown"}
-Revenue: ${org.organization_revenue_printed || "unknown"}
-HQ: ${[org.city, org.state, org.country].filter(Boolean).join(", ") || "unknown"}
-Description: ${org.short_description || "none"}
-Keywords: ${org.keywords?.slice(0, 15).join(", ") || "none"}`
+  const companyContext = company
+    ? `Company: ${company.name} (${domain})
+Industry: ${company.industry || "unknown"}
+Employees: ${company.employeeCount || "unknown"}
+Revenue: ${company.revenue || "unknown"}
+HQ: ${[company.city, company.state, company.country].filter(Boolean).join(", ") || "unknown"}
+Description: ${company.description || "none"}
+Keywords: ${company.keywords?.slice(0, 15).join(", ") || "none"}`
     : `Company domain: ${domain}`;
 
   const message = await anthropic.messages.create({
@@ -207,37 +151,32 @@ export async function POST(req: NextRequest) {
       .replace(/\/.*$/, "")
       .toLowerCase();
 
-    // Step 1: Get real company data from Apollo
-    const { org, error: apolloError } = await enrichCompanyFromApollo(domain);
+    // Step 1: Get real company data (Databar primary, Apollo fallback)
+    const { company, source } = await enrichCompany(domain);
 
-    if (apolloError === "rate_limit") {
-      return NextResponse.json(
-        { error: "Too many requests. Try again in a moment." },
-        { status: 429 }
-      );
-    }
+    console.log(`enrich-committee: company source = ${source}`);
 
     // Step 2: Generate suggested contacts via Claude (using real company context)
     const result = await generateSuggestedContacts(
-      org,
+      company,
       committeeResult,
       dealInputs,
       domain
     );
 
-    // Build company info from Apollo org data
-    const hqLocation = org
-      ? [org.city, org.state, org.country].filter(Boolean).join(", ") || null
+    // Build company info
+    const hqLocation = company
+      ? [company.city, company.state, company.country].filter(Boolean).join(", ") || null
       : null;
 
-    const company = {
-      name: org?.name || domain.split(".")[0],
+    const companyInfo = {
+      name: company?.name || domain.split(".")[0],
       domain,
-      logoUrl: org?.logo_url || `https://logo.clearbit.com/${domain}`,
-      industry: org?.industry || null,
-      employeeCount: org?.estimated_num_employees || null,
-      revenue: org?.organization_revenue_printed || null,
-      description: org?.short_description || null,
+      logoUrl: company?.logoUrl || `https://logo.clearbit.com/${domain}`,
+      industry: company?.industry || null,
+      employeeCount: company?.employeeCount || null,
+      revenue: company?.revenue || null,
+      description: company?.description || null,
       techStack: [],
       recentFunding: null,
       hqLocation,
@@ -246,7 +185,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       enrichment_available: true,
       suggested_contacts: true,
-      company,
+      company: companyInfo,
       roles: result.matched_roles,
       deal_risk_score: result.deal_risk_score ?? 50,
       competitive_signals: result.competitive_signals || null,

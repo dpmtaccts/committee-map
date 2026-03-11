@@ -1,57 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { enrichCompany, searchPeople } from "@/lib/databar";
+import type { CompanyData, PersonData } from "@/lib/databar";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-interface ApolloOrg {
-  name: string;
-  logo_url: string | null;
-  website_url: string | null;
-  estimated_num_employees: number | null;
-  industry: string | null;
-  short_description: string | null;
-  city: string | null;
-  state: string | null;
-  country: string | null;
-  organization_revenue_printed: string | null;
-  keywords: string[] | null;
-}
+function inferDealContext(company: CompanyData | null, roleContext: string | null) {
+  const industry = company?.industry || "Technology";
+  const employees = company?.employeeCount || 100;
 
-async function enrichCompanyFromApollo(
-  domain: string
-): Promise<{ org: ApolloOrg | null; error?: string }> {
-  const apiKey = process.env.APOLLO_API_KEY;
-  if (!apiKey) return { org: null, error: "APOLLO_API_KEY not configured" };
-
-  try {
-    const res = await fetch(
-      `https://api.apollo.io/api/v1/organizations/enrich?domain=${encodeURIComponent(domain)}`,
-      {
-        method: "GET",
-        headers: { "Cache-Control": "no-cache", "X-Api-Key": apiKey },
-      }
-    );
-
-    if (res.status === 429) return { org: null, error: "rate_limit" };
-    if (res.status === 401) return { org: null, error: "auth_error" };
-    if (!res.ok) return { org: null, error: `Apollo returned ${res.status}` };
-
-    const data = await res.json();
-    return { org: data.organization as ApolloOrg | null };
-  } catch (e) {
-    console.error("Apollo enrichment failed:", e);
-    return { org: null, error: "network_error" };
-  }
-}
-
-function inferDealContext(org: ApolloOrg | null, roleContext: string | null) {
-  const industry = org?.industry || "Technology";
-  const employees = org?.estimated_num_employees || 100;
-  const revenue = org?.organization_revenue_printed || "Unknown";
-
-  let companySize = "$10M\u2013$100M";
+  let companySize = "$10M–$100M";
   if (employees > 1000) companySize = "$500M+";
-  else if (employees > 500) companySize = "$100M\u2013$500M";
+  else if (employees > 500) companySize = "$100M–$500M";
   else if (employees < 50) companySize = "Under $10M";
 
   let buyingDepartment = "Sales / Revenue";
@@ -71,8 +31,8 @@ function inferDealContext(org: ApolloOrg | null, roleContext: string | null) {
   }
 
   let dealSize = "$75K";
-  if (employees > 500) dealSize = "$200K";
-  else if (employees > 1000) dealSize = "$500K+";
+  if (employees > 1000) dealSize = "$500K+";
+  else if (employees > 500) dealSize = "$200K";
   else if (employees < 50) dealSize = "$25K";
 
   return {
@@ -83,8 +43,28 @@ function inferDealContext(org: ApolloOrg | null, roleContext: string | null) {
     dealSize,
     dealStage: "Evaluating",
     contactLevel,
-    revenue,
   };
+}
+
+function buildCompanyContext(company: CompanyData | null, domain: string) {
+  if (!company) return `Company domain: ${domain}`;
+
+  const hq = [company.city, company.state, company.country].filter(Boolean).join(", ") || "unknown";
+  return `Company: ${company.name} (${domain})
+Industry: ${company.industry || "unknown"}
+Employees: ${company.employeeCount || "unknown"}
+Revenue: ${company.revenue || "unknown"}
+HQ: ${hq}
+Description: ${company.description || "none"}
+Keywords: ${company.keywords?.slice(0, 15).join(", ") || "none"}`;
+}
+
+function buildPeopleContext(people: PersonData[]) {
+  if (people.length === 0) return "";
+  const lines = people.slice(0, 20).map(
+    (p) => `- ${p.name}: ${p.title || "unknown title"}${p.email ? ` (${p.email})` : ""}${p.linkedinUrl ? ` [LinkedIn: ${p.linkedinUrl}]` : ""}`
+  );
+  return `\n\nREAL PEOPLE FOUND AT THIS COMPANY:\n${lines.join("\n")}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -101,25 +81,22 @@ export async function POST(req: NextRequest) {
       .replace(/\/.*$/, "")
       .toLowerCase();
 
-    // Step 1: Enrich company from Apollo
-    const { org, error: apolloError } = await enrichCompanyFromApollo(domain);
+    // Step 1: Enrich company + search people (in parallel)
+    const [companyResult, peopleResult] = await Promise.all([
+      enrichCompany(domain),
+      searchPeople(domain),
+    ]);
 
-    if (apolloError === "rate_limit") {
-      return NextResponse.json({ error: "Too many requests. Try again in a moment." }, { status: 429 });
-    }
+    const { company, source: companySource } = companyResult;
+    const { people } = peopleResult;
 
-    // Step 2: Infer deal context from Apollo data + role
-    const dealContext = inferDealContext(org, roleContext);
+    console.log(`Enrichment sources — company: ${companySource}, people: ${peopleResult.source} (${people.length} found)`);
 
-    const companyContext = org
-      ? `Company: ${org.name} (${domain})
-Industry: ${org.industry || "unknown"}
-Employees: ${org.estimated_num_employees || "unknown"}
-Revenue: ${org.organization_revenue_printed || "unknown"}
-HQ: ${[org.city, org.state, org.country].filter(Boolean).join(", ") || "unknown"}
-Description: ${org.short_description || "none"}
-Keywords: ${org.keywords?.slice(0, 15).join(", ") || "none"}`
-      : `Company domain: ${domain}`;
+    // Step 2: Infer deal context
+    const dealContext = inferDealContext(company, roleContext);
+
+    const companyContext = buildCompanyContext(company, domain);
+    const peopleContext = buildPeopleContext(people);
 
     const roleDescription = linkedinUrl
       ? `The user provided a LinkedIn profile: ${linkedinUrl}. Use this to understand the person's role and seniority.`
@@ -138,7 +115,7 @@ Keywords: ${org.keywords?.slice(0, 15).join(", ") || "none"}`
           content: `Build a complete relationship map for this deal.
 
 REAL COMPANY DATA:
-${companyContext}
+${companyContext}${peopleContext}
 
 ROLE CONTEXT:
 ${roleDescription}
@@ -154,8 +131,8 @@ Contact level: ${dealContext.contactLevel}
 
 INSTRUCTIONS:
 1. Generate 4-6 buying committee roles relevant to this company and deal type.
-2. For each role, suggest a plausible person who would hold that role at this specific company based on its size, industry, and structure.
-3. Generate realistic names and titles. Use LinkedIn URL format: https://linkedin.com/in/firstname-lastname
+2. For each role, ${people.length > 0 ? "match real people from the REAL PEOPLE list above when possible. For unmatched roles, suggest plausible people." : "suggest a plausible person who would hold that role at this specific company based on its size, industry, and structure."}
+3. ${people.length > 0 ? "Use real names, titles, and LinkedIn URLs from the data when available." : "Generate realistic names and titles. Use LinkedIn URL format: https://linkedin.com/in/firstname-lastname"}
 4. Set status: "covered" only if the role context suggests coverage, "risk" for roles that can block the deal, "gap" for others.
 5. Generate 2-3 specific "ways in" for each role using the real company context.
 6. Calculate a deal_risk_score (0-100).
@@ -165,8 +142,8 @@ Return this exact JSON:
   "matched_roles": [
     {
       "role": "Economic Buyer",
-      "name": "<suggested person name>",
-      "title": "<suggested title for this company>",
+      "name": "<person name>",
+      "title": "<title for this company>",
       "linkedinUrl": "https://linkedin.com/in/firstname-lastname",
       "email": null,
       "status": "covered|gap|risk",
@@ -202,28 +179,28 @@ Rules for role generation:
     const cleaned = content.text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
     const result = JSON.parse(cleaned);
 
-    // Build company info
-    const hqLocation = org
-      ? [org.city, org.state, org.country].filter(Boolean).join(", ") || null
+    // Build company info for response
+    const hqLocation = company
+      ? [company.city, company.state, company.country].filter(Boolean).join(", ") || null
       : null;
 
-    const company = {
-      name: org?.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1),
+    const companyInfo = {
+      name: company?.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1),
       domain,
-      logoUrl: org?.logo_url || `https://logo.clearbit.com/${domain}`,
-      industry: org?.industry || null,
-      employeeCount: org?.estimated_num_employees || null,
-      revenue: org?.organization_revenue_printed || null,
-      description: org?.short_description || null,
+      logoUrl: company?.logoUrl || `https://logo.clearbit.com/${domain}`,
+      industry: company?.industry || null,
+      employeeCount: company?.employeeCount || null,
+      revenue: company?.revenue || null,
+      description: company?.description || null,
       techStack: [],
       recentFunding: null,
       hqLocation,
     };
 
     return NextResponse.json({
-      enrichment_available: !!org,
-      suggested_contacts: true,
-      company,
+      enrichment_available: !!company,
+      suggested_contacts: people.length === 0,
+      company: companyInfo,
       roles: result.matched_roles,
       deal_risk_score: result.deal_risk_score ?? 50,
       competitive_signals: result.competitive_signals || null,
