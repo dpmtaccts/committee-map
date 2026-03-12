@@ -7,6 +7,7 @@ import TranscriptForm from "@/components/TranscriptForm";
 import type { TranscriptInputs } from "@/components/TranscriptForm";
 import ConnectedResultsView from "@/components/ConnectedResultsView";
 import type { EnrichedResult } from "@/components/ConnectedResultsView";
+import EraHeader from "@/components/EraHeader";
 import { toast } from "sonner";
 
 export type DealInputs = QuickMapInputs | TranscriptInputs;
@@ -119,34 +120,9 @@ export default function Home() {
   if (enrichedResult && !isLoading) {
     return (
       <div className="min-h-screen" style={{ background: "#F6F5F2" }}>
-        {/* Header */}
-        <header
-          className="fixed top-0 left-0 right-0 z-50"
-          style={{ background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid #D7DADD" }}
-        >
-          <div className="max-w-[760px] mx-auto flex items-center justify-between" style={{ padding: "14px 24px" }}>
-            <div className="flex items-center gap-2">
-              <span className="font-heading" style={{ fontSize: 18, fontWeight: 900, color: "#383838" }}>
-                <span style={{ display: "inline-block", width: 10, height: 10, background: "#383838", marginRight: 6 }} />
-                ERA
-              </span>
-            </div>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleReset}
-                className="text-sm font-semibold cursor-pointer font-body hover:underline"
-                style={{ color: "#1FA7A2" }}
-              >
-                Map another deal
-              </button>
-              <span className="font-body" style={{ fontSize: 12, fontWeight: 400, color: "#5B6670" }}>
-                Relationship Map
-              </span>
-            </div>
-          </div>
-        </header>
+        <EraHeader showMapAnother onReset={handleReset} light />
 
-        <div className="max-w-[720px] mx-auto px-4 md:px-0 pb-16 pt-[72px]">
+        <div className="max-w-[720px] mx-auto px-4 md:px-0 pb-16 pt-[80px]">
           <div className="pt-8">
             <ConnectedResultsView inputs={inputs!} result={enrichedResult} onReset={handleReset} />
           </div>
@@ -194,23 +170,10 @@ export default function Home() {
   // Input page
   return (
     <div className="min-h-screen" style={{ background: "#F6F5F2" }}>
-      {/* Header */}
-      <header style={{ background: "#FFFFFF", borderBottom: "1px solid #D7DADD" }}>
-        <div className="max-w-[640px] mx-auto flex items-center justify-between" style={{ padding: "14px 24px" }}>
-          <div className="flex items-center gap-2">
-            <span className="font-heading" style={{ fontSize: 18, fontWeight: 900, color: "#383838" }}>
-              <span style={{ display: "inline-block", width: 10, height: 10, background: "#383838", marginRight: 6 }} />
-              ERA
-            </span>
-          </div>
-          <span className="font-body" style={{ fontSize: 12, fontWeight: 400, color: "#5B6670" }}>
-            Relationship Map
-          </span>
-        </div>
-      </header>
+      <EraHeader light />
 
       {/* Hero + Form */}
-      <div className="max-w-[640px] mx-auto px-4 md:px-0" style={{ paddingTop: 56, paddingBottom: 56 }}>
+      <div className="max-w-[640px] mx-auto px-4 md:px-0" style={{ paddingTop: 100, paddingBottom: 56 }}>
         {/* Headline */}
         <h1
           className="font-heading"
